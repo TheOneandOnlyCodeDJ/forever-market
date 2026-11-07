@@ -107,6 +107,8 @@ def build_html(data, generated_at=None, now=None):
         "<h1>forever-market</h1>", '<div class="strip">' + "".join(strip) + "</div>",
         *_section("FARM", cols["farm"], data["farm"],
                   row_class=lambda r: "thin" if r["confidence"] == "thin" else "", cell=_cell),
+        *_section("BOE", cols["boe"], data["boe"],
+                  row_class=lambda r: "thin" if r["flag"] in ("thin", "vendor") else "", cell=_cell),
         *_section("CRAFT", cols["craft"], data["craft"][:15], cell=_cell),
         *_section("FLIP", cols["flip"], data["flip"][:15]),
         *_section("GATHER", cols["gather"], data["gather"][:15]),
