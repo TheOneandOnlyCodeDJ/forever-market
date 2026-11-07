@@ -31,9 +31,11 @@ compact digest written for an LLM to read.
    **Not present** for this build: `GameObject`, `CreatureLoot` (loot is server-side).
 3. **Classic Era ItemSparse** (`build=1.15.9.70576`) as a metadata fallback: the Forever
    `ItemSparse` export only names ~19.3k of ~32k items. Merge Era underneath Forever.
-4. **Wowhead Forever** (`https://www.wowhead.com/forever/...`) for drop-rate baselines and
-   node locations. Cloudflare blocks plain curl (403); the browser tool or a real UA works.
-   Treat as best-effort and cache hard.
+4. **Wowhead Forever** (`https://www.wowhead.com/forever/...`) for creatures, drop rates and node
+   locations. This is the only workable world-data source: the client DB2 `Creature` export for
+   build 1.60.1 holds only 185 rows and `CreatureLoot`/`GameObject` do not exist at all, so
+   creatures, drops and nodes must come from Wowhead plus our own logging. Cloudflare blocks
+   plain curl (403); the browser tool or a real UA works. Cache hard, resume, never hammer.
 5. **Local game data** (authoritative for this realm, cannot be scraped):
    - TSM SavedVariables:
      `/home/bazzite/Faugus/battlenet/drive_c/Program Files (x86)/World of Warcraft/_forever_/WTF/Account/250808230#1/SavedVariables/TradeSkillMaster.lua`
