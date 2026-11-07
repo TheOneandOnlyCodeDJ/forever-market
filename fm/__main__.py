@@ -16,8 +16,15 @@ def main(argv=None):
     imp.add_parser("loot").add_argument("--dry-run", action="store_true", help="print what would be imported, write nothing")
     sub.add_parser("report")
     sub.add_parser("status")
+    srv = sub.add_parser("serve")
+    srv.add_argument("--port", type=int, default=8099)
+    srv.add_argument("--host", default="127.0.0.1")
     args = p.parse_args(argv)
 
+    if args.cmd == "serve":
+        from fm import web
+        web.serve(args.host, args.port)
+        return 0
     if args.cmd == "import":
         import_loot.run(None if args.dry_run else db.connect(), dry_run=args.dry_run)
         return 0
