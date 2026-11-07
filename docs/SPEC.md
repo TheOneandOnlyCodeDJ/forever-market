@@ -42,6 +42,29 @@ compact digest written for an LLM to read.
      holds his own auction scans, craft DB and prices.
    - Our own loot addon (see `addon/`) writes kill + loot events for measured drop rates.
 
+## Measured loot import (Loot Tracker Forever)
+
+`LootTrackerForever` is already installed on the client and writes one SavedVariables file per
+character: `WTF/Account/<acct>/<realm>/<Char>/SavedVariables/LootTrackerForever.lua`, table
+`LootTrackerForeverData`. Structure verified on 2026-11-07 (Lain: 320 kills, 441 loots, 50 sources):
+
+```lua
+LootTrackerForeverData = {
+  session  = { started, lastActive, elapsed, copper, kills, loots,
+               sources = { ["<creature or node name>"] = { kills, copper, items = { [itemID] = count } } },
+               items   = { [itemID] = { count, vendor, name, q, cat, first, last, link } },
+               zones   = { ["<zone>"] = n }, rares = {...}, feed = {...} },
+  history  = { { ended, valueSource, items, copper, kills, seconds }, ... },   -- last N sessions
+  lifetime = { sessions, total, copper, kills, seconds, bestPerHour, bestTotal },
+}
+```
+
+Measured drop rate for an item from a source is `items[itemID] / sources[name].kills`, with
+`sources[name].kills` as the sample size. Nothing here is vendor-normalised: `copper` is the
+looted coin only, item value is in `items[id].vendor` (or the addon's configured price source).
+
+`LootGoblin` is a different addon and only writes scan diagnostics; ignore it.
+
 ## Database
 
 `data/market.db`, schema in `fm/schema.sql`. Tables:

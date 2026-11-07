@@ -22,7 +22,12 @@ def abilities(sla):
         prof = PROFESSIONS.get(int(r["SkillLine"]))
         if prof is None:
             continue
-        spell, rank = int(r["Spell"]), int(r["MinSkillLineRank"])
+        spell = int(r["Spell"])
+        rank = int(r["MinSkillLineRank"])
+        if rank <= 1:
+            # this build leaves MinSkillLineRank at 1 for classic-era recipes; the trivial
+            # threshold is the only usable skill signal left in the row
+            rank = int(r["TrivialSkillLineRankLow"] or 0) or 1
         if spell not in out or rank < out[spell][1]:
             out[spell] = (prof, rank, _int(r["TradeSkillCategoryID"]))
     return out

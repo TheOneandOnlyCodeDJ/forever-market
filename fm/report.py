@@ -137,11 +137,13 @@ def build(conn):
                  LEFT JOIN item i ON i.id = w.item_id
                  LEFT JOIN price_realm p ON p.item_id = w.item_id
                  WHERE COALESCE(p.market_value, 0) = 0
-                 GROUP BY w.item_id ORDER BY item""")
+                 GROUP BY w.item_id ORDER BY item LIMIT 50""")
+    watch_total = conn.execute("""SELECT COUNT(*) FROM (SELECT item_id FROM craft_output
+                                  UNION SELECT item_id FROM "drop")""").fetchone()[0]
     craft_rows, craft_skipped = craft(conn)
     return {"sources": sources, "counts": counts, "snapshot": snapshot, "movers": movers,
             "gather": gather, "craft": craft_rows, "craft_skipped": craft_skipped,
-            "flip": flip, "watch": watch}
+            "flip": flip, "watch": watch, "watch_total": watch_total}
 
 
 COLUMNS = {
@@ -178,7 +180,9 @@ def render(data, generated_at):
              "market value (see WATCH); {priced} outputs fully priced.".format(**data["craft_skipped"]), "",
              "## FLIP", "", "realm items, market >= 1g, minBO <= 0.7 x market; top 25 by gap.", "",
              *_table(COLUMNS["flip"], data["flip"]),
-             "## WATCH", "", "recipe outputs or drops with no realm price.", "",
+             "## WATCH", "",
+             f"recipe outputs or drops with no realm price; showing {len(data['watch'])} "
+             f"of {data['watch_total']}.", "",
              *_table(COLUMNS["watch"], data["watch"])]
     return "\n".join(lines)
 
