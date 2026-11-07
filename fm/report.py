@@ -10,15 +10,17 @@ SUBCLASS = {5: "Cloth", 6: "Leather", 9: "Herb", 10: "Elemental", 7: "Ore/Stone"
             12: "Enchanting", 11: "Other", 1: "Parts"}
 NODE_YIELD = {9: 1.5, 7: 2.2, 6: 1.0, 5: 1.0}  # classic yield per node, by Trade Goods subclass
 TABLES = ["item", "price_realm", "price_region", "spell", "spell_reagent", "craft_output",
-          "creature", "area", "drop", "kill_event", "loot_event", "node_area", "sync_log"]
-COPPER = {"market", "minBO", "historical", "gap", "node value", "value", "cost", "sell", "profit"}
+          "creature", "area", "drop", "kill_event", "loot_event", "node_area", "sync_log",
+          "loot_session", "loot_source", "loot_item_source", "loot_item"]
+COPPER = {"market", "minBO", "historical", "gap", "node value", "value", "cost", "sell", "profit", "copper",
+          "copper/kill"}
 NAME = "COALESCE(i.name, 'item ' || p.item_id)"
 
 
 def _fmt(col, v):
     if col in COPPER:
-        return "0.00g" if col == "profit" and v == 0 else gold(v)
-    if col.endswith("%"):
+        return "0.00g" if col in ("profit", "copper", "copper/kill") and v == 0 else gold(v)
+    if col.endswith("%") or col == "rate":
         return pct(v)
     if col in ("region sale", "sale rate"):
         return "-" if v is None else f"{v:.3f}"
@@ -76,6 +78,40 @@ def craft(conn):
     rows.sort(key=lambda r: (-r["profit"], r["item"]))
     return rows[:30], {"priced": len(best), "unpriced mats": len(seen - best.keys()),
                        "no realm price": no_sell}
+
+
+LATEST = """SELECT id FROM loot_session s WHERE started = (
+               SELECT MAX(started) FROM loot_session WHERE character = s.character)"""
+RATES = f"""SELECT r.session_id, r.source_name AS source, r.item_id, src.kills, r.count AS drops,
+              ROUND(100.0 * r.count / src.kills, 1) AS rate,
+              COALESCE(li.name, i.name, 'item ' || r.item_id) AS item
+            FROM loot_item_source r
+            JOIN loot_source src ON src.session_id = r.session_id AND src.name = r.source_name
+            LEFT JOIN loot_item li ON li.session_id = r.session_id AND li.item_id = r.item_id
+            LEFT JOIN item i ON i.id = r.item_id
+            WHERE r.session_id IN ({LATEST}) AND src.kills > 0"""
+
+
+def kill(conn):
+    """Measured loot from the most recent session per character -> (KILL rows, MEASURED rows, footer)."""
+    best = {}
+    for r in conn.execute(RATES + " ORDER BY rate DESC, r.item_id"):
+        best.setdefault((r["session_id"], r["source"]), r)
+    rows = []
+    for r in conn.execute(f"""SELECT session_id, name, kills, copper FROM loot_source
+                              WHERE session_id IN ({LATEST}) AND kills >= 5
+                              ORDER BY kills DESC, name"""):
+        b = best.get((r["session_id"], r["name"]))
+        rows.append({"source": r["name"], "kills": r["kills"], "copper": r["copper"],
+                     "copper/kill": round(r["copper"] / r["kills"]) if r["copper"] is not None else None,
+                     "best item": b["item"] if b else None, "rate": b["rate"] if b else None,
+                     "sample": r["kills"]})
+    measured = [{"item": r["item"], "source": r["source"], "kills": r["kills"], "drops": r["drops"],
+                 "rate %": r["rate"]} for r in conn.execute(
+        RATES + " AND src.kills >= 20 AND r.count >= 2 ORDER BY rate DESC, src.kills DESC, item LIMIT 25")]
+    footer = dict(conn.execute("""SELECT COUNT(*) AS sessions, COUNT(DISTINCT character) AS characters,
+                                  SUM(kills) AS kills FROM loot_session""").fetchone())
+    return rows, measured, footer
 
 
 def status(conn):
@@ -141,8 +177,10 @@ def build(conn):
     watch_total = conn.execute("""SELECT COUNT(*) FROM (SELECT item_id FROM craft_output
                                   UNION SELECT item_id FROM "drop")""").fetchone()[0]
     craft_rows, craft_skipped = craft(conn)
+    kill_rows, measured, kill_totals = kill(conn)
     return {"sources": sources, "counts": counts, "snapshot": snapshot, "movers": movers,
-            "gather": gather, "craft": craft_rows, "craft_skipped": craft_skipped,
+            "gather": gather, "kill": kill_rows, "measured": measured, "kill_totals": kill_totals,
+            "craft": craft_rows, "craft_skipped": craft_skipped,
             "flip": flip, "watch": watch, "watch_total": watch_total}
 
 
@@ -152,9 +190,24 @@ COLUMNS = {
     "movers": ["item", "market", "historical", "change %"],
     "gather": ["item", "type", "market", "minBO", "region sale", "node value"],
     "craft": ["item", "profession", "skill", "cost", "sell", "profit", "margin %", "listed", "sale rate"],
+    "kill": ["source", "kills", "copper", "copper/kill", "best item", "rate", "sample"],
+    "measured": ["item", "source", "kills", "drops", "rate %"],
     "flip": ["item", "market", "minBO", "gap", "gap %"],
     "watch": ["item", "reason"],
 }
+
+
+def _kill_lines(data):
+    t = data["kill_totals"]
+    if not t["sessions"]:
+        return ["no loot data yet", "", "rows: 0", ""]
+    return ["measured loot (Loot Tracker Forever), most recent session per character, sources with "
+            "kills >= 5. copper = looted coin only. best item = highest drops/kills; rate in percent; "
+            "sample = kills.", "", *_table(COLUMNS["kill"], data["kill"]),
+            f"sessions imported: {t['sessions']}, characters: {t['characters']}, total kills: {t['kills']}", "",
+            "### MEASURED", "", "kills >= 20 and drops >= 2; top 25 by rate.", "",
+            *_table(COLUMNS["measured"], data["measured"]),
+            "measured rates are local to this realm and character", ""]
 
 
 def render(data, generated_at):
@@ -171,6 +224,7 @@ def render(data, generated_at):
              "## GATHER", "",
              "node value = market x classic yield (herb 1.5, ore 2.2, leather/cloth 1.0).", "",
              *_table(COLUMNS["gather"], data["gather"]),
+             "## KILL", "", *_kill_lines(data),
              "## CRAFT", "",
              "cost = sum(qty x mat price) / items per craft, realm price first; `*` after profession = "
              "some mat priced from region. sell = 0.95 x realm market. margin % = 100 x profit / cost. "
@@ -205,6 +259,10 @@ def run(conn, md_path=ROOT / "reports" / "digest.md", json_path=ROOT / "data" / 
             "craft": "cheapest fully priced spell per output; cost per crafted item; sell = 0.95 x realm "
                      "market; '*' in profession = a mat priced from region; HIDDEN = profit > 0, not listed; cap 30",
             "craft_skipped": "priced = outputs with every mat priced; unpriced mats / no realm price = skipped",
+            "kill": "loot_source rows with kills >= 5 from the latest session per character; copper fields "
+                    "copper; rate = best item drops/kills as percent 0-100; sample = kills",
+            "measured": "per item+source, kills >= 20 and drops >= 2, top 25 by rate %",
+            "kill_totals": "all imported loot sessions: sessions, characters, kills",
             "flip": "market >= 10000 copper, minBO <= 0.7 x market, sorted by gap, cap 25",
             "watch": "recipe outputs / drops with no realm price",
         },
@@ -213,5 +271,5 @@ def run(conn, md_path=ROOT / "reports" / "digest.md", json_path=ROOT / "data" / 
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json.dumps({"_meta": meta, **data}, indent=1))
     print(f"wrote {md_path} and {json_path}: " + ", ".join(
-        f"{k} {len(data[k])}" for k in ("snapshot", "movers", "gather", "craft", "flip", "watch")))
+        f"{k} {len(data[k])}" for k in ("snapshot", "movers", "gather", "kill", "measured", "craft", "flip", "watch")))
     return data

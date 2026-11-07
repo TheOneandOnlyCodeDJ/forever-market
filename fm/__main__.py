@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from fm import db, report, sync_items, sync_prices, sync_recipes
+from fm import db, import_loot, report, sync_items, sync_prices, sync_recipes
 
 
 def main(argv=None):
@@ -12,10 +12,15 @@ def main(argv=None):
     prices.add_argument("--fixtures", action="store_true", help="read tests/fixtures CSVs, no network")
     sync.add_parser("items")
     sync.add_parser("recipes")
+    imp = sub.add_parser("import").add_subparsers(dest="what", required=True)
+    imp.add_parser("loot").add_argument("--dry-run", action="store_true", help="print what would be imported, write nothing")
     sub.add_parser("report")
     sub.add_parser("status")
     args = p.parse_args(argv)
 
+    if args.cmd == "import":
+        import_loot.run(None if args.dry_run else db.connect(), dry_run=args.dry_run)
+        return 0
     conn = db.connect()
     if args.cmd == "sync":
         if args.what == "prices":

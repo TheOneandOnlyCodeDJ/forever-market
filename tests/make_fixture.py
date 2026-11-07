@@ -5,7 +5,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from fm import db, sync_prices  # noqa: E402
+from fm import db, import_loot, sync_prices  # noqa: E402
 
 OUT = HERE / "fixtures" / "market_fixture.db"
 # Copied from wago Item + ItemSparse build 1.60.1.70790 on 2026-11-07.
@@ -38,6 +38,8 @@ def main():
         (2657, "Smelt Copper", "Mining", 1, 2575), (2963, "Bolt of Linen Cloth", "Tailoring", 1, 2576)])
     conn.executemany("INSERT INTO spell_reagent VALUES (?,?,?)", [(2657, 2770, 1), (2963, 2589, 2)])
     conn.executemany("INSERT INTO craft_output VALUES (?,?,?)", [(2657, 2840, 1), (2963, 2996, 1)])
+    import_loot.run(conn, HERE / "fixtures" / "client")
+    conn.execute("UPDATE loot_session SET imported_at = '2026-11-07 21:00:00'")
     conn.execute("UPDATE sync_log SET fetched_at = '2026-11-07 21:00:00'")  # stable fixture bytes
     conn.commit()
     conn.close()

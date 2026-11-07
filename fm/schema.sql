@@ -27,3 +27,12 @@ CREATE TABLE IF NOT EXISTS kill_event (id INTEGER PRIMARY KEY, creature_id INTEG
 CREATE TABLE IF NOT EXISTS loot_event (id INTEGER PRIMARY KEY, kill_event_id INTEGER, item_id INTEGER, quantity INTEGER);
 CREATE TABLE IF NOT EXISTS node_area (item_id INTEGER, area_id INTEGER, kind TEXT, source TEXT);
 CREATE TABLE IF NOT EXISTS sync_log (source TEXT, fetched_at TEXT, rows INTEGER, note TEXT);
+CREATE TABLE IF NOT EXISTS loot_session (
+  id TEXT PRIMARY KEY, character TEXT, started INTEGER, ended INTEGER, kills INTEGER, loots INTEGER,
+  copper INTEGER, seconds INTEGER, imported_at TEXT
+);
+CREATE TABLE IF NOT EXISTS loot_source (session_id TEXT, name TEXT, kills INTEGER, copper INTEGER);
+CREATE TABLE IF NOT EXISTS loot_item_source (session_id TEXT, source_name TEXT, item_id INTEGER, count INTEGER);
+CREATE TABLE IF NOT EXISTS loot_item (
+  session_id TEXT, item_id INTEGER, count INTEGER, vendor INTEGER, name TEXT, quality INTEGER
+);
