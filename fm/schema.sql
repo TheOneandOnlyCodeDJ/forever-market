@@ -1,0 +1,29 @@
+-- Applied on every connect; every statement must be idempotent.
+CREATE TABLE IF NOT EXISTS item (
+  id INTEGER PRIMARY KEY, name TEXT, quality INTEGER, item_level INTEGER, req_level INTEGER,
+  class_id INTEGER, sub_class INTEGER, bonding INTEGER, stackable INTEGER, vendor_sell INTEGER,
+  source TEXT
+);
+CREATE TABLE IF NOT EXISTS price_realm (
+  item_id INTEGER PRIMARY KEY, market_value INTEGER, min_buyout INTEGER, recent INTEGER,
+  historical INTEGER, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS price_region (
+  item_id INTEGER PRIMARY KEY, market_value INTEGER, historical INTEGER, avg_sale INTEGER,
+  sale_rate REAL, sold_per_day REAL, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS spell (
+  id INTEGER PRIMARY KEY, name TEXT, profession TEXT, min_skill INTEGER, category_id INTEGER
+);
+CREATE TABLE IF NOT EXISTS spell_reagent (spell_id INTEGER, item_id INTEGER, quantity INTEGER);
+CREATE TABLE IF NOT EXISTS craft_output (spell_id INTEGER, item_id INTEGER, num_result INTEGER);
+CREATE TABLE IF NOT EXISTS creature (
+  id INTEGER PRIMARY KEY, name TEXT, min_level INTEGER, max_level INTEGER, classification INTEGER,
+  creature_type INTEGER, area_id INTEGER
+);
+CREATE TABLE IF NOT EXISTS area (id INTEGER PRIMARY KEY, name TEXT, parent_id INTEGER, continent_id INTEGER);
+CREATE TABLE IF NOT EXISTS "drop" (creature_id INTEGER, item_id INTEGER, chance REAL, source TEXT, sample_size INTEGER);
+CREATE TABLE IF NOT EXISTS kill_event (id INTEGER PRIMARY KEY, creature_id INTEGER, at TEXT, duration_s REAL, source TEXT);
+CREATE TABLE IF NOT EXISTS loot_event (id INTEGER PRIMARY KEY, kill_event_id INTEGER, item_id INTEGER, quantity INTEGER);
+CREATE TABLE IF NOT EXISTS node_area (item_id INTEGER, area_id INTEGER, kind TEXT, source TEXT);
+CREATE TABLE IF NOT EXISTS sync_log (source TEXT, fetched_at TEXT, rows INTEGER, note TEXT);
