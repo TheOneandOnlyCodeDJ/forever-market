@@ -53,14 +53,19 @@ def build(conn):
     movers = q(f"""SELECT {NAME} AS item, p.market_value AS market, p.historical,
                    ROUND(100.0 * (p.market_value - p.historical) / p.historical, 1) AS "change %"
                    FROM price_realm p LEFT JOIN item i ON i.id = p.item_id
-                   WHERE p.market_value >= 10000 AND p.historical > 0
+                   WHERE p.market_value >= 10000 AND p.historical >= 5000
                    ORDER BY ABS(p.market_value - p.historical) * 1.0 / p.historical DESC, p.item_id
                    LIMIT 10""")
     gather = q(f"""SELECT {NAME} AS item, i.sub_class, p.market_value AS market,
                    p.min_buyout AS minBO, g.sale_rate AS "region sale"
                    FROM price_realm p JOIN item i ON i.id = p.item_id
                    LEFT JOIN price_region g ON g.item_id = p.item_id
-                   WHERE i.class_id = 7 AND p.market_value > 0""")
+                   LEFT JOIN craft_output c ON c.item_id = p.item_id
+                   WHERE i.class_id = 7 AND p.market_value > 0 AND c.item_id IS NULL""")
+    # craft_output is empty until M2, so also drop obvious processed goods by name
+    PROCESSED = (" bar", "bolt of", "grinding stone", " thread", " rod")
+    gather = [r for r in gather if not r["item"].lower().endswith(PROCESSED)
+              and not r["item"].lower().startswith("bolt of")]
     for r in gather:
         sub = r.pop("sub_class")
         r["type"] = SUBCLASS.get(sub, f"sub {sub}")
