@@ -19,6 +19,7 @@ ITEMS = [
     (2840, "Copper Bar", 1, 10, 0, 7, 7, 0, 20, 10, "forever"),
     (2996, "Bolt of Linen Cloth", 1, 10, 0, 7, 5, 0, 20, 40, "forever"),
     (4306, "Silk Cloth", 1, 30, 0, 7, 5, 0, 20, 150, "forever"),
+    (10413, "Gloves of the Fang", 2, 19, 19, 4, 2, 2, 1, 35, "forever"),
     (5964, "Barbaric Shoulders", 2, 35, 30, 4, 2, 2, 1, 2609, "forever"),
     (9294, "Recipe: Wildvine Potion", 2, 45, 0, 9, 6, 0, 1, 2000, "forever"),
     (14047, "Runecloth", 1, 50, 0, 7, 5, 0, 20, 400, "forever"),
@@ -41,6 +42,8 @@ def main():
                                                                     (7151, 4234, 8), (7151, 4236, 1), (7151, 2321, 2)])
     conn.executemany("INSERT INTO craft_output VALUES (?,?,?)", [(2657, 2840, 1), (2963, 2996, 1), (7151, 5964, 1)])
     import_loot.run(conn, HERE / "fixtures" / "client")
+    conn.execute("""INSERT INTO loot_item_source (session_id, source_name, item_id, count)
+                    SELECT session_id, name, 10413, 2 FROM loot_source LIMIT 1""")
     conn.execute("UPDATE loot_session SET imported_at = '2026-11-07 21:00:00'")
     conn.execute("UPDATE sync_log SET fetched_at = '2026-11-07 21:00:00'")  # stable fixture bytes
     conn.commit()

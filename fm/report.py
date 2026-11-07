@@ -200,13 +200,13 @@ def _flag(listed, value, sale_rate):
 
 
 def boe(conn):
-    """Bind-on-equip drops and craft outputs, quality >= 2, worth more than vendor or >= 50s -> (rows, footer)."""
+    """Bind-on-equip items actually seen dropping, quality >= 2, worth more than vendor or >= 50s."""
     cands = conn.execute("""SELECT i.id, COALESCE(i.name, 'item ' || i.id) AS item, i.item_level AS ilvl,
                               i.quality AS q, i.vendor_sell AS vendor, p.min_buyout, g.sale_rate
                             FROM item i LEFT JOIN price_realm p ON p.item_id = i.id
                             LEFT JOIN price_region g ON g.item_id = i.id
                             WHERE i.bonding = 2 AND i.quality >= 2 AND i.id IN (
-                              SELECT item_id FROM loot_item_source UNION SELECT item_id FROM craft_output)""").fetchall()
+                              SELECT item_id FROM loot_item_source)""").fetchall()
     rows, none = [], 0
     for c in cands:
         value, source = value_of(conn, c["id"])
@@ -346,7 +346,7 @@ def _farm_lines(data):
 
 def _boe_lines(data):
     t = data["boe_totals"]
-    return ["bind on equip, quality >= 2, dropped (Loot Tracker) or crafted; value = max(0.95 x buyout, vendor), "
+    return ["bind on equip, quality >= 2, seen dropping in your own loot log; value = max(0.95 x buyout, vendor), "
             "kept when value > vendor or value >= 50s. buyout = realm minBO. premium = value / vendor. "
             "flag: scarce = no listing and value >= 2g; demand = region sale rate >= 0.25; thin = listed, "
             "sale rate missing or < 0.05; vendor = otherwise. Top 20 by value.", "",
