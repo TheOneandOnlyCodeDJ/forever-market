@@ -39,10 +39,10 @@ def test_digest_from_fixture_db(tmp_path):
     conn.row_factory = sqlite3.Row
     data = report.run(conn, tmp_path / "digest.md", tmp_path / "summary.json")
     md = (tmp_path / "digest.md").read_text()
-    for section in ("## SNAPSHOT", "## GATHER", "## KILL", "### MEASURED", "## CRAFT", "## FLIP", "## WATCH"):
+    for section in ("## SNAPSHOT", "## GATHER", "## KILL", "### MEASURED", "## FARM", "## CRAFT", "## FLIP", "## WATCH"):
         assert section in md
     counts = [int(line.split()[1]) for line in md.splitlines() if line.startswith("rows: ")]
-    assert len(counts) == 10 and all(n > 0 for n in counts)  # every table non-empty on fixtures
+    assert len(counts) == 11 and all(n > 0 for n in counts)  # every table non-empty on fixtures
     gather = {r["item"]: r for r in data["gather"]}
     assert gather["Peacebloom"]["node value"] == 33  # 22c x 1.5
     assert gather["Copper Ore"]["node value"] == 132  # 60c x 2.2

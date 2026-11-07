@@ -56,7 +56,7 @@ def test_drop_rate_8_kills_2_drops(tmp_path):
     rates = {r["item"]: r["rate"] for r in _imported(tmp_path).execute(report.RATES)}
     assert rates["Chunk of Boar Meat"] == 25.0
     assert measured == [{"item": "Light Leather", "source": "Fixture Wolf", "kills": 20, "drops": 4, "rate %": 20.0}]
-    assert footer == {"sessions": 2, "characters": 2, "kills": 28}
+    assert footer == {"sessions": 2, "characters": 2, "kills": 28, "unpriced drops": 12}
 
 
 def test_reimport_is_idempotent(tmp_path):
