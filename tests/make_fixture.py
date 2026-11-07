@@ -16,6 +16,8 @@ ITEMS = [
     (2458, "Elixir of Minor Fortitude", 1, 12, 2, 0, 2, 0, 20, 15, "forever"),
     (2589, "Linen Cloth", 1, 5, 0, 7, 5, 0, 20, 13, "forever"),
     (2770, "Copper Ore", 1, 10, 0, 7, 7, 0, 20, 5, "forever"),
+    (2840, "Copper Bar", 1, 10, 0, 7, 7, 0, 20, 10, "forever"),
+    (2996, "Bolt of Linen Cloth", 1, 10, 0, 7, 5, 0, 20, 40, "forever"),
     (4306, "Silk Cloth", 1, 30, 0, 7, 5, 0, 20, 150, "forever"),
     (5964, "Barbaric Shoulders", 2, 35, 30, 4, 2, 2, 1, 2609, "forever"),
     (9294, "Recipe: Wildvine Potion", 2, 45, 0, 9, 6, 0, 1, 2000, "forever"),
@@ -31,6 +33,11 @@ def main():
     conn.executemany("INSERT INTO item VALUES (?,?,?,?,?,?,?,?,?,?,?)", ITEMS)
     # Alchemy "Elixir of Minor Fortitude" (spell 2334); its output has no fixture price -> WATCH row.
     conn.execute("INSERT INTO craft_output VALUES (2334, 2458, 1)")
+    # Copied from wago SpellName/SpellReagents/SpellEffect/SkillLineAbility build 1.60.1.70790.
+    conn.executemany("INSERT INTO spell VALUES (?,?,?,?,?)", [
+        (2657, "Smelt Copper", "Mining", 1, 2575), (2963, "Bolt of Linen Cloth", "Tailoring", 1, 2576)])
+    conn.executemany("INSERT INTO spell_reagent VALUES (?,?,?)", [(2657, 2770, 1), (2963, 2589, 2)])
+    conn.executemany("INSERT INTO craft_output VALUES (?,?,?)", [(2657, 2840, 1), (2963, 2996, 1)])
     conn.execute("UPDATE sync_log SET fetched_at = '2026-11-07 21:00:00'")  # stable fixture bytes
     conn.commit()
     conn.close()

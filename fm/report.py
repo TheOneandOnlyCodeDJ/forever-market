@@ -11,16 +11,16 @@ SUBCLASS = {5: "Cloth", 6: "Leather", 9: "Herb", 10: "Elemental", 7: "Ore/Stone"
 NODE_YIELD = {9: 1.5, 7: 2.2, 6: 1.0, 5: 1.0}  # classic yield per node, by Trade Goods subclass
 TABLES = ["item", "price_realm", "price_region", "spell", "spell_reagent", "craft_output",
           "creature", "area", "drop", "kill_event", "loot_event", "node_area", "sync_log"]
-COPPER = {"market", "minBO", "historical", "gap", "node value", "value"}
+COPPER = {"market", "minBO", "historical", "gap", "node value", "value", "cost", "sell", "profit"}
 NAME = "COALESCE(i.name, 'item ' || p.item_id)"
 
 
 def _fmt(col, v):
     if col in COPPER:
-        return gold(v)
+        return "0.00g" if col == "profit" and v == 0 else gold(v)
     if col.endswith("%"):
         return pct(v)
-    if col == "region sale":
+    if col in ("region sale", "sale rate"):
         return "-" if v is None else f"{v:.3f}"
     return num(v)
 
@@ -31,13 +31,66 @@ def _table(cols, rows):
     return out + ["", f"rows: {len(rows)}", ""]
 
 
-def build(conn):
-    q = lambda sql: [dict(r) for r in conn.execute(sql)]
-    sources = q("""SELECT source, fetched_at, rows, note FROM sync_log s
+def craft(conn):
+    """Cheapest fully priced spell per output item -> (rows sorted by profit, skipped counts)."""
+    realm = {r[0]: (r[1], r[2]) for r in conn.execute(
+        "SELECT item_id, market_value, min_buyout FROM price_realm")}
+    region = {r[0]: (r[1], r[2]) for r in conn.execute(
+        "SELECT item_id, market_value, sale_rate FROM price_region")}
+    names = dict(conn.execute("SELECT id, name FROM item"))
+    reagents = {}
+    for spell, item, qty in conn.execute("SELECT spell_id, item_id, quantity FROM spell_reagent"):
+        reagents.setdefault(spell, []).append((item, qty))
+    best, seen = {}, set()
+    for spell, item, n, prof, skill in conn.execute(
+            """SELECT c.spell_id, c.item_id, c.num_result, s.profession, s.min_skill
+               FROM craft_output c JOIN spell s ON s.id = c.spell_id ORDER BY c.spell_id"""):
+        seen.add(item)
+        cost, realm_only = 0, True
+        for mat, qty in reagents.get(spell, []):
+            price = (realm.get(mat) or (None,))[0] or None
+            if price is None:
+                realm_only = False
+                price = (region.get(mat) or (None,))[0] or None
+            if price is None:
+                break
+            cost += qty * price
+        else:
+            cost = round(cost / (n or 1))  # per crafted item
+            if item not in best or cost < best[item][0]:
+                best[item] = (cost, prof + ("" if realm_only else "*"), skill)
+    rows, no_sell = [], 0
+    for item, (cost, prof, skill) in best.items():
+        market, min_bo = realm.get(item, (None, None))
+        if not market:
+            no_sell += 1  # listed in WATCH instead
+            continue
+        sell = round(0.95 * market)
+        profit = sell - cost
+        listed = "yes" if (min_bo or 0) > 0 else "no"
+        name = names.get(item) or f"item {item}"
+        rows.append({"item": ("HIDDEN " if profit > 0 and listed == "no" else "") + name,
+                     "profession": prof, "skill": skill, "cost": cost, "sell": sell,
+                     "profit": profit, "margin %": round(100 * profit / cost, 1) if cost else None,
+                     "listed": listed, "sale rate": (region.get(item) or (None, None))[1]})
+    rows.sort(key=lambda r: (-r["profit"], r["item"]))
+    return rows[:30], {"priced": len(best), "unpriced mats": len(seen - best.keys()),
+                       "no realm price": no_sell}
+
+
+def status(conn):
+    """Latest sync_log row per source and row count per table."""
+    sources = [dict(r) for r in conn.execute("""SELECT source, fetched_at, rows, note FROM sync_log s
                    WHERE rowid = (SELECT MAX(rowid) FROM sync_log WHERE source = s.source)
-                   ORDER BY source""")
+                   ORDER BY source""")]
     counts = [{"table": t, "rows": conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]}
               for t in TABLES]
+    return sources, counts
+
+
+def build(conn):
+    q = lambda sql: [dict(r) for r in conn.execute(sql)]
+    sources, counts = status(conn)
 
     values = [r[0] for r in conn.execute("SELECT market_value FROM price_realm WHERE market_value > 0")]
     listed = [r[0] for r in conn.execute("SELECT min_buyout FROM price_realm WHERE min_buyout > 0")]
@@ -62,7 +115,7 @@ def build(conn):
                    LEFT JOIN price_region g ON g.item_id = p.item_id
                    LEFT JOIN craft_output c ON c.item_id = p.item_id
                    WHERE i.class_id = 7 AND p.market_value > 0 AND c.item_id IS NULL""")
-    # craft_output is empty until M2, so also drop obvious processed goods by name
+    # also drop processed goods by name in case recipes were never synced
     PROCESSED = (" bar", "bolt of", "grinding stone", " thread", " rod")
     gather = [r for r in gather if not r["item"].lower().endswith(PROCESSED)
               and not r["item"].lower().startswith("bolt of")]
@@ -85,8 +138,10 @@ def build(conn):
                  LEFT JOIN price_realm p ON p.item_id = w.item_id
                  WHERE COALESCE(p.market_value, 0) = 0
                  GROUP BY w.item_id ORDER BY item""")
+    craft_rows, craft_skipped = craft(conn)
     return {"sources": sources, "counts": counts, "snapshot": snapshot, "movers": movers,
-            "gather": gather, "flip": flip, "watch": watch}
+            "gather": gather, "craft": craft_rows, "craft_skipped": craft_skipped,
+            "flip": flip, "watch": watch}
 
 
 COLUMNS = {
@@ -94,6 +149,7 @@ COLUMNS = {
     "counts": ["table", "rows"],
     "movers": ["item", "market", "historical", "change %"],
     "gather": ["item", "type", "market", "minBO", "region sale", "node value"],
+    "craft": ["item", "profession", "skill", "cost", "sell", "profit", "margin %", "listed", "sale rate"],
     "flip": ["item", "market", "minBO", "gap", "gap %"],
     "watch": ["item", "reason"],
 }
@@ -113,6 +169,13 @@ def render(data, generated_at):
              "## GATHER", "",
              "node value = market x classic yield (herb 1.5, ore 2.2, leather/cloth 1.0).", "",
              *_table(COLUMNS["gather"], data["gather"]),
+             "## CRAFT", "",
+             "cost = sum(qty x mat price) / items per craft, realm price first; `*` after profession = "
+             "some mat priced from region. sell = 0.95 x realm market. margin % = 100 x profit / cost. "
+             "HIDDEN = profit > 0 and nothing listed. sale rate is region, 0-1. Top 30 by profit.", "",
+             *_table(COLUMNS["craft"], data["craft"]),
+             "skipped: {unpriced mats} outputs with unpriced materials, {no realm price} with no realm "
+             "market value (see WATCH); {priced} outputs fully priced.".format(**data["craft_skipped"]), "",
              "## FLIP", "", "realm items, market >= 1g, minBO <= 0.7 x market; top 25 by gap.", "",
              *_table(COLUMNS["flip"], data["flip"]),
              "## WATCH", "", "recipe outputs or drops with no realm price.", "",
@@ -135,6 +198,9 @@ def run(conn, md_path=ROOT / "reports" / "digest.md", json_path=ROOT / "data" / 
             "snapshot": "metric, value, unit (copper|count)",
             "movers": "realm market vs historical, top 10 by |change %|",
             "gather": "Trade Goods (class 7) with realm price; node value = market x yield",
+            "craft": "cheapest fully priced spell per output; cost per crafted item; sell = 0.95 x realm "
+                     "market; '*' in profession = a mat priced from region; HIDDEN = profit > 0, not listed; cap 30",
+            "craft_skipped": "priced = outputs with every mat priced; unpriced mats / no realm price = skipped",
             "flip": "market >= 10000 copper, minBO <= 0.7 x market, sorted by gap, cap 25",
             "watch": "recipe outputs / drops with no realm price",
         },
@@ -143,5 +209,5 @@ def run(conn, md_path=ROOT / "reports" / "digest.md", json_path=ROOT / "data" / 
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json.dumps({"_meta": meta, **data}, indent=1))
     print(f"wrote {md_path} and {json_path}: " + ", ".join(
-        f"{k} {len(data[k])}" for k in ("snapshot", "movers", "gather", "flip", "watch")))
+        f"{k} {len(data[k])}" for k in ("snapshot", "movers", "gather", "craft", "flip", "watch")))
     return data
