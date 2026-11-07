@@ -4,7 +4,7 @@ import statistics
 from datetime import datetime, timezone
 
 from fm.db import ROOT
-from fm.fmt import gold, num, pct
+from fm.fmt import coin, gold, num, pct
 
 SUBCLASS = {5: "Cloth", 6: "Leather", 9: "Herb", 10: "Elemental", 7: "Ore/Stone", 8: "Meat",
             12: "Enchanting", 11: "Other", 1: "Parts"}
@@ -19,7 +19,8 @@ NAME = "COALESCE(i.name, 'item ' || p.item_id)"
 
 def _fmt(col, v):
     if col in COPPER:
-        return "0.00g" if col in ("profit", "copper", "copper/kill") and v == 0 else gold(v)
+        return ("0.00g" if v == 0 else gold(v)) if col in ("profit", "copper") else (
+            coin(v) if col == "copper/kill" else gold(v))
     if col.endswith("%") or col == "rate":
         return pct(v)
     if col in ("region sale", "sale rate"):
@@ -101,14 +102,16 @@ def kill(conn):
     for r in conn.execute(f"""SELECT session_id, name, kills, copper FROM loot_source
                               WHERE session_id IN ({LATEST}) AND kills >= 5
                               ORDER BY kills DESC, name"""):
-        b = best.get((r["session_id"], r["name"]))
+        labelled = r["name"] != "Unknown creature"
+        b = best.get((r["session_id"], r["name"])) if labelled else None
         rows.append({"source": r["name"], "kills": r["kills"], "copper": r["copper"],
                      "copper/kill": round(r["copper"] / r["kills"]) if r["copper"] is not None else None,
                      "best item": b["item"] if b else None, "rate": b["rate"] if b else None,
                      "sample": r["kills"]})
     measured = [{"item": r["item"], "source": r["source"], "kills": r["kills"], "drops": r["drops"],
                  "rate %": r["rate"]} for r in conn.execute(
-        RATES + " AND src.kills >= 20 AND r.count >= 2 ORDER BY rate DESC, src.kills DESC, item LIMIT 25")]
+        RATES + " AND src.kills >= 20 AND r.count >= 2 AND src.name != 'Unknown creature'"
+        " ORDER BY rate DESC, src.kills DESC, item LIMIT 25")]
     footer = dict(conn.execute("""SELECT COUNT(*) AS sessions, COUNT(DISTINCT character) AS characters,
                                   SUM(kills) AS kills FROM loot_session""").fetchone())
     return rows, measured, footer
