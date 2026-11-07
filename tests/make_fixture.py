@@ -35,9 +35,11 @@ def main():
     conn.execute("INSERT INTO craft_output VALUES (2334, 2458, 1)")
     # Copied from wago SpellName/SpellReagents/SpellEffect/SkillLineAbility build 1.60.1.70790.
     conn.executemany("INSERT INTO spell VALUES (?,?,?,?,?)", [
-        (2657, "Smelt Copper", "Mining", 1, 2575), (2963, "Bolt of Linen Cloth", "Tailoring", 1, 2576)])
-    conn.executemany("INSERT INTO spell_reagent VALUES (?,?,?)", [(2657, 2770, 1), (2963, 2589, 2)])
-    conn.executemany("INSERT INTO craft_output VALUES (?,?,?)", [(2657, 2840, 1), (2963, 2996, 1)])
+        (2657, "Smelt Copper", "Mining", 1, 2575), (2963, "Bolt of Linen Cloth", "Tailoring", 1, 2576),
+        (7151, "Barbaric Shoulders", "Leatherworking", 170, 2554)])
+    conn.executemany("INSERT INTO spell_reagent VALUES (?,?,?)", [(2657, 2770, 1), (2963, 2589, 2),
+                                                                    (7151, 4234, 8), (7151, 4236, 1), (7151, 2321, 2)])
+    conn.executemany("INSERT INTO craft_output VALUES (?,?,?)", [(2657, 2840, 1), (2963, 2996, 1), (7151, 5964, 1)])
     import_loot.run(conn, HERE / "fixtures" / "client")
     conn.execute("UPDATE loot_session SET imported_at = '2026-11-07 21:00:00'")
     conn.execute("UPDATE sync_log SET fetched_at = '2026-11-07 21:00:00'")  # stable fixture bytes

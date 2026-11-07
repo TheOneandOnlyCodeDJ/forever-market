@@ -13,14 +13,15 @@ TABLES = ["item", "price_realm", "price_region", "spell", "spell_reagent", "craf
           "creature", "area", "drop", "kill_event", "loot_event", "node_area", "sync_log",
           "loot_session", "loot_source", "loot_item_source", "loot_item"]
 COPPER = {"market", "minBO", "historical", "gap", "node value", "value", "cost", "sell", "profit", "copper",
-          "copper/kill", "loot/kill", "total/kill"}
+          "vendor", "buyout",
+          "copper/kill", "loot/kill", "total/kill", "value/drop"}
 NAME = "COALESCE(i.name, 'item ' || p.item_id)"
 
 
 def _fmt(col, v):
     if col in COPPER:
         return ("0.00g" if v == 0 else gold(v)) if col in ("profit", "copper") else (
-            coin(v) if col.endswith("/kill") else gold(v))
+            coin(v) if col.endswith(("/kill", "/drop")) else gold(v))
     if col.endswith("%") or col in ("rate", "loot share"):
         return pct(v)
     if col in ("region sale", "sale rate"):
@@ -93,19 +94,35 @@ RATES = f"""SELECT r.session_id, r.source_name AS source, r.item_id, src.kills, 
             WHERE r.session_id IN ({LATEST}) AND src.kills > 0"""
 
 
-def price_of(conn, item_id):
-    """(copper, 'realm'|'region') from market_value, or (None, 'none'). TSM's 0 means no data."""
-    for table, source in (("price_realm", "realm"), ("price_region", "region")):
-        r = conn.execute(f"SELECT market_value FROM {table} WHERE item_id = ?", (item_id,)).fetchone()
-        if r and r[0]:
-            return r[0], source
-    return None, "none"
+VALUE_SOURCES = ("buyout", "vendor", "none")
+
+
+def value_of(conn, item_id):
+    """(copper, source) with source in {"buyout", "vendor", "none"}: max(0.95 x realm minBO, vendor sell)."""
+    min_bo, vendor = conn.execute("""SELECT (SELECT min_buyout FROM price_realm WHERE item_id = ?),
+                                            (SELECT vendor_sell FROM item WHERE id = ?)""", (item_id, item_id)).fetchone()
+    buyout = round(0.95 * min_bo) if min_bo and min_bo > 0 else 0  # after the 5% AH cut
+    vendor = vendor or 0
+    if buyout and buyout >= vendor:
+        return buyout, "buyout"
+    return (vendor, "vendor") if vendor else (0, "none")
 
 
 def _loot(conn, session_id, source):
-    """Per item of one source: [(item, rate, drops, copper value or None)]."""
-    return [(r["item"], r["rate"], r["drops"], (lambda c: c and c * r["drops"])(price_of(conn, r["item_id"])[0]))
+    """Per item of one source: [(item, rate, drops, copper value of all drops, value source)]."""
+    return [(r["item"], r["rate"], r["drops"], *(lambda v, s: (v * r["drops"], s))(*value_of(conn, r["item_id"])))
             for r in conn.execute(RATES + " AND r.session_id = ? AND r.source_name = ?", (session_id, source))]
+
+
+def _sources(loot):
+    """Drops per value source over [(item, rate, drops, value, source)]."""
+    return {s: sum(d for _, _, d, _, src in loot if src == s) for s in VALUE_SOURCES}
+
+
+def _split(counts):
+    n = sum(counts.values())
+    return "value source: " + ", ".join(
+        f"{s} {round(100 * counts[s] / n) if n else 0}%" for s in VALUE_SOURCES) + f" ({n} drops)"
 
 
 def kill(conn):
@@ -120,21 +137,21 @@ def kill(conn):
         labelled = r["name"] != "Unknown creature"
         b = best.get((r["session_id"], r["name"])) if labelled else None
         loot = _loot(conn, r["session_id"], r["name"])
-        loot_kill = round(sum(v or 0 for *_, v in loot) / r["kills"])  # unpriced drops count as 0
+        loot_kill = round(sum(v for _, _, _, v, _ in loot) / r["kills"])
         per_kill = round(r["copper"] / r["kills"]) if r["copper"] is not None else None
         rows.append({"source": r["name"], "kills": r["kills"], "copper": r["copper"],
                      "copper/kill": per_kill, "loot/kill": loot_kill,
                      "total/kill": None if per_kill is None else per_kill + loot_kill,
                      "best item": b["item"] if b else None, "rate": b["rate"] if b else None,
                      "sample": r["kills"], "session": r["session_id"], "_loot": loot,
-                     "unpriced drops": sum(d for _, _, d, v in loot if v is None)})
+                     "value source": _sources(loot)})
     measured = [{"item": r["item"], "source": r["source"], "kills": r["kills"], "drops": r["drops"],
-                 "rate %": r["rate"]} for r in conn.execute(
+                 "rate %": r["rate"], "value/drop": value_of(conn, r["item_id"])[0] or None} for r in conn.execute(
         RATES + " AND src.kills >= 20 AND r.count >= 2 AND src.name != 'Unknown creature'"
         " ORDER BY rate DESC, src.kills DESC, item LIMIT 25")]
     footer = dict(conn.execute("""SELECT COUNT(*) AS sessions, COUNT(DISTINCT character) AS characters,
                                   SUM(kills) AS kills FROM loot_session""").fetchone())
-    footer["unpriced drops"] = sum(r["unpriced drops"] for r in rows)
+    footer["value source"] = {s: sum(r["value source"][s] for r in rows) for s in VALUE_SOURCES}
     return rows, measured, footer
 
 
@@ -145,21 +162,20 @@ def farm(conn, kill_rows):
     for r in labelled:
         if r["kills"] < 10:
             continue
-        value = sum(v or 0 for *_, v in r["_loot"])
-        best = max(r["_loot"], key=lambda x: (x[3] or 0, x[1]), default=None)
-        drops = sum(d for _, _, d, _ in r["_loot"])
+        value = sum(v for _, _, _, v, _ in r["_loot"])
+        best = max(r["_loot"], key=lambda x: (x[3], x[1]), default=None)
         rows.append({"source": r["source"], "kills": r["kills"], "copper/kill": r["copper/kill"],
                      "loot/kill": r["loot/kill"], "total/kill": r["total/kill"],
-                     "loot share": round(100 * (best[3] or 0) / value, 1) if value else None,
+                     "loot share": round(100 * best[3] / value, 1) if value else None,
                      "best item": best[0] if best else None, "rate": best[1] if best else None,
                      "confidence": "ok" if r["kills"] >= 50 else "thin", "session": r["session"],
-                     "drops": drops, "priced drops": drops - r["unpriced drops"]})
+                     "value source": r["value source"]})
     rows.sort(key=lambda r: (-(r["total/kill"] if r["total/kill"] is not None else -1), r["source"]))
     rows = rows[:25]
     pace = []
     for sid in dict.fromkeys(r["session"] for r in rows):
         s = conn.execute("SELECT character, kills, copper, seconds FROM loot_session WHERE id = ?", (sid,)).fetchone()
-        items = sum((price_of(conn, i)[0] or 0) * n for i, n in conn.execute(
+        items = sum(value_of(conn, i)[0] * n for i, n in conn.execute(
             "SELECT item_id, count FROM loot_item WHERE session_id = ?", (sid,)))
         value = (s["copper"] or 0) + items
         hours = s["seconds"] / 3600 if s["seconds"] else None
@@ -167,12 +183,44 @@ def farm(conn, kill_rows):
                      "kills": s["kills"], "loot value": value,
                      "kills/hour": round(s["kills"] / hours, 1) if hours and s["kills"] is not None else None,
                      "copper/hour": round(value / hours) if hours else None})
-    drops = sum(r["drops"] for r in rows)
     footer = {"considered": len(labelled), "low sample": sum(r["kills"] < 10 for r in labelled),
-              "unlabelled excluded": len(kill_rows) - len(labelled), "drops": drops,
-              "priced drops": sum(r["priced drops"] for r in rows),
-              "price coverage %": round(100 * sum(r["priced drops"] for r in rows) / drops, 1) if drops else None}
+              "unlabelled excluded": len(kill_rows) - len(labelled),
+              "value source": {s: sum(r["value source"][s] for r in rows) for s in VALUE_SOURCES}}
     return rows, pace, footer
+
+
+def _flag(listed, value, sale_rate):
+    if not listed and value >= 20000:
+        return "scarce"
+    if sale_rate is not None and sale_rate >= 0.25:
+        return "demand"
+    if listed and (sale_rate is None or sale_rate < 0.05):
+        return "thin"
+    return "vendor"
+
+
+def boe(conn):
+    """Bind-on-equip drops and craft outputs, quality >= 2, worth more than vendor or >= 50s -> (rows, footer)."""
+    cands = conn.execute("""SELECT i.id, COALESCE(i.name, 'item ' || i.id) AS item, i.item_level AS ilvl,
+                              i.quality AS q, i.vendor_sell AS vendor, p.min_buyout, g.sale_rate
+                            FROM item i LEFT JOIN price_realm p ON p.item_id = i.id
+                            LEFT JOIN price_region g ON g.item_id = i.id
+                            WHERE i.bonding = 2 AND i.quality >= 2 AND i.id IN (
+                              SELECT item_id FROM loot_item_source UNION SELECT item_id FROM craft_output)""").fetchall()
+    rows, none = [], 0
+    for c in cands:
+        value, source = value_of(conn, c["id"])
+        none += source == "none"
+        vendor = c["vendor"] or 0
+        if source == "none" or not (value > vendor or value >= 5000):
+            continue
+        listed = (c["min_buyout"] or 0) > 0
+        rows.append({"item": c["item"], "ilvl": c["ilvl"], "q": c["q"], "vendor": c["vendor"],
+                     "buyout": c["min_buyout"] if listed else None, "value": value,
+                     "premium": f"{value / vendor:.1f}" if vendor else "-", "listings": "yes" if listed else "no",
+                     "sale rate": c["sale_rate"], "flag": _flag(listed, value, c["sale_rate"])})
+    rows.sort(key=lambda r: (-r["value"], r["item"]))
+    return rows[:20], {"candidates": len(cands), "dropped none": none}
 
 
 def status(conn):
@@ -240,11 +288,13 @@ def build(conn):
     craft_rows, craft_skipped = craft(conn)
     kill_rows, measured, kill_totals = kill(conn)
     farm_rows, farm_pace, farm_totals = farm(conn, kill_rows)
+    boe_rows, boe_totals = boe(conn)
     for r in kill_rows:
         del r["_loot"]
     return {"sources": sources, "counts": counts, "snapshot": snapshot, "movers": movers,
             "gather": gather, "kill": kill_rows, "measured": measured, "kill_totals": kill_totals,
             "farm": farm_rows, "farm_pace": farm_pace, "farm_totals": farm_totals,
+            "boe": boe_rows, "boe_totals": boe_totals,
             "craft": craft_rows, "craft_skipped": craft_skipped,
             "flip": flip, "watch": watch, "watch_total": watch_total}
 
@@ -257,7 +307,8 @@ COLUMNS = {
     "craft": ["item", "profession", "skill", "cost", "sell", "profit", "margin %", "listed", "sale rate"],
     "kill": ["source", "kills", "copper", "copper/kill", "loot/kill", "total/kill", "best item", "rate", "sample"],
     "farm": ["source", "kills", "total/kill", "loot share", "best item", "rate", "confidence"],
-    "measured": ["item", "source", "kills", "drops", "rate %"],
+    "measured": ["item", "source", "kills", "drops", "rate %", "value/drop"],
+    "boe": ["item", "ilvl", "q", "vendor", "buyout", "value", "premium", "listings", "sale rate", "flag"],
     "flip": ["item", "market", "minBO", "gap", "gap %"],
     "watch": ["item", "reason"],
 }
@@ -269,11 +320,11 @@ def _kill_lines(data):
         return ["no loot data yet", "", "rows: 0", ""]
     return ["measured loot (Loot Tracker Forever), most recent session per character, sources with "
             "kills >= 5. copper = looted coin only. best item = highest drops/kills; rate in percent; "
-            "sample = kills. loot/kill = sum(drops x price) / kills, price = realm market, else region "
-            "market, else 0. total/kill = copper/kill + loot/kill.", "", *_table(COLUMNS["kill"], data["kill"]),
-            f"sessions imported: {t['sessions']}, characters: {t['characters']}, total kills: {t['kills']}, "
-            f"drops with no price (counted as 0): {t['unpriced drops']}", "",
-            "### MEASURED", "", "kills >= 20 and drops >= 2; top 25 by rate.", "",
+            "sample = kills. loot/kill = sum(drops x value) / kills, value = max(0.95 x realm minBO, vendor "
+            "sell), else 0. total/kill = copper/kill + loot/kill.", "", *_table(COLUMNS["kill"], data["kill"]),
+            f"sessions imported: {t['sessions']}, characters: {t['characters']}, total kills: {t['kills']}, " +
+            _split(t["value source"]), "",
+            "### MEASURED", "", "kills >= 20 and drops >= 2; top 25 by rate. value/drop = same rule as KILL.", "",
             *_table(COLUMNS["measured"], data["measured"]),
             "measured rates are local to this realm and character", ""]
 
@@ -290,8 +341,18 @@ def _farm_lines(data):
             "in percent. confidence: ok at kills >= 50, thin at 10-49.", "",
             *_table(COLUMNS["farm"], data["farm"]),
             f"sources considered: {t['considered']}, dropped for low sample (kills < 10): {t['low sample']}, "
-            f"unlabelled excluded: {t['unlabelled excluded']}, price coverage: {pct(t['price coverage %'])} "
-            f"({t['priced drops']}/{t['drops']} drops priced)", ""]
+            f"unlabelled excluded: {t['unlabelled excluded']}", _split(t["value source"]), ""]
+
+
+def _boe_lines(data):
+    t = data["boe_totals"]
+    return ["bind on equip, quality >= 2, dropped (Loot Tracker) or crafted; value = max(0.95 x buyout, vendor), "
+            "kept when value > vendor or value >= 50s. buyout = realm minBO. premium = value / vendor. "
+            "flag: scarce = no listing and value >= 2g; demand = region sale rate >= 0.25; thin = listed, "
+            "sale rate missing or < 0.05; vendor = otherwise. Top 20 by value.", "",
+            *_table(COLUMNS["boe"], data["boe"]),
+            f"candidates: {t['candidates']}, dropped for value source none: {t['dropped none']}", "",
+            "flags are price-and-liquidity signals, not proof of buyer interest", ""]
 
 
 def render(data, generated_at):
@@ -310,6 +371,7 @@ def render(data, generated_at):
              *_table(COLUMNS["gather"], data["gather"]),
              "## KILL", "", *_kill_lines(data),
              "## FARM", "", *_farm_lines(data),
+             "## BOE", "", *_boe_lines(data),
              "## CRAFT", "",
              "cost = sum(qty x mat price) / items per craft, realm price first; `*` after profession = "
              "some mat priced from region. sell = 0.95 x realm market. margin % = 100 x profit / cost. "
@@ -347,12 +409,16 @@ def run(conn, md_path=ROOT / "reports" / "digest.md", json_path=ROOT / "data" / 
             "kill": "loot_source rows with kills >= 5 from the latest session per character; copper fields "
                     "copper; rate = best item drops/kills as percent 0-100; sample = kills",
             "measured": "per item+source, kills >= 20 and drops >= 2, top 25 by rate %",
-            "kill_totals": "all imported loot sessions: sessions, characters, kills; unpriced drops in KILL rows",
+            "kill_totals": "all imported loot sessions: sessions, characters, kills; value source = drops in "
+                           "KILL rows per source (buyout = 0.95 x realm minBO, vendor = vendor sell, none)",
             "farm": "KILL rows with kills >= 10 (no 'Unknown creature') by total/kill, cap 25; copper/kill, "
                     "loot/kill, total/kill copper; loot share percent 0-100 of loot value from best item",
             "farm_pace": "per session behind FARM rows: seconds, kills, loot value (coin + items, copper), "
                          "kills/hour, copper/hour",
-            "farm_totals": "considered, low sample, unlabelled excluded, drops, priced drops, price coverage %",
+            "farm_totals": "considered, low sample, unlabelled excluded, value source = drops in FARM rows per source",
+            "boe": "bonding 2, quality >= 2, dropped or crafted, value > vendor or >= 5000 copper; buyout = realm "
+                   "minBO; value = max(0.95 x minBO, vendor); premium = value / vendor; cap 20",
+            "boe_totals": "candidates before the value filter; dropped none = candidates with value source none",
             "flip": "market >= 10000 copper, minBO <= 0.7 x market, sorted by gap, cap 25",
             "watch": "recipe outputs / drops with no realm price",
         },
@@ -361,5 +427,5 @@ def run(conn, md_path=ROOT / "reports" / "digest.md", json_path=ROOT / "data" / 
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json.dumps({"_meta": meta, **data}, indent=1))
     print(f"wrote {md_path} and {json_path}: " + ", ".join(
-        f"{k} {len(data[k])}" for k in ("snapshot", "movers", "gather", "kill", "measured", "farm", "craft", "flip", "watch")))
+        f"{k} {len(data[k])}" for k in ("snapshot", "movers", "gather", "kill", "measured", "farm", "boe", "craft", "flip", "watch")))
     return data

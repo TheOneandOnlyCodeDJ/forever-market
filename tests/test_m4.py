@@ -8,7 +8,7 @@ from fm import db, fmt, report  # noqa: E402
 
 
 def _db(tmp_path, sources, prices=()):
-    """sources: (name, kills, copper, {item: drops}); prices: (table, item, market_value)."""
+    """sources: (name, kills, copper, {item: drops}); prices: (item, min_buyout, vendor_sell)."""
     conn = db.connect(tmp_path / "m.db")
     conn.execute("INSERT INTO loot_session VALUES ('c:1', 'c', 1, NULL, ?, 0, ?, 3600, 'now')",
                  (sum(s[1] for s in sources), sum(s[2] for s in sources)))
@@ -17,38 +17,29 @@ def _db(tmp_path, sources, prices=()):
         conn.executemany("INSERT INTO loot_item_source VALUES ('c:1', ?, ?, ?)",
                          [(name, i, n) for i, n in items.items()])
         conn.executemany("INSERT INTO loot_item VALUES ('c:1', ?, ?, NULL, NULL, NULL)", items.items())
-    for table, item, mv in prices:
-        conn.execute(f"INSERT INTO {table} (item_id, market_value) VALUES (?, ?)", (item, mv))
+    for item, min_bo, vendor in prices:
+        conn.execute("INSERT INTO price_realm (item_id, min_buyout) VALUES (?, ?)", (item, min_bo))
+        conn.execute("INSERT INTO item (id, vendor_sell) VALUES (?, ?)", (item, vendor))
     return conn
 
 
 def test_ev_maths(tmp_path):
-    # Brief inputs (25% at 100c) give 25c, not its stated 500c; kept its outputs with consistent inputs:
-    # 5 drops / 20 kills = 25% at 2000c -> 500c/kill loot; 10000c coin / 20 kills -> 500c/kill.
-    conn = _db(tmp_path, [("Wolf", 20, 10000, {1: 5})], [("price_region", 1, 2000)])
-    assert report.price_of(conn, 1) == (2000, "region")
-    assert report.price_of(conn, 2) == (None, "none")
+    # 5 drops / 20 kills = 25%, valued 0.95 x 2000 = 1900c -> 475c/kill loot; 10000c coin / 20 kills -> 500c/kill.
+    conn = _db(tmp_path, [("Wolf", 20, 10000, {1: 5})], [(1, 2000, 0)])
     (r,), _, _ = report.kill(conn)
-    assert (r["rate"], r["loot/kill"], r["copper/kill"], r["total/kill"]) == (25.0, 500, 500, 1000)
-    assert fmt.coin(r["total/kill"]) == "10.00s"
+    assert (r["rate"], r["loot/kill"], r["copper/kill"], r["total/kill"]) == (25.0, 475, 500, 975)
+    assert fmt.coin(r["total/kill"]) == "9.75s"
     data = report.build(conn)
-    assert data["farm"][0]["total/kill"] == 1000 and data["farm_pace"][0]["copper/hour"] == 20000  # 1 hour
+    assert data["farm"][0]["total/kill"] == 975 and data["farm_pace"][0]["copper/hour"] == 19500  # 1 hour
 
 
-def test_realm_price_wins(tmp_path):
-    conn = _db(tmp_path, [], [("price_realm", 1, 300), ("price_region", 1, 2000), ("price_realm", 2, 0)])
-    assert report.price_of(conn, 1) == (300, "realm")
-    assert report.price_of(conn, 2) == (None, "none")  # TSM 0 = no data
-
-
-def test_unpriced_drops_reach_footer(tmp_path):
-    conn = _db(tmp_path, [("Wolf", 20, 0, {1: 4, 2: 6})], [("price_realm", 1, 100)])
+def test_unvalued_drops_reach_footer(tmp_path):
+    conn = _db(tmp_path, [("Wolf", 20, 0, {1: 4, 2: 6})], [(1, 0, 100)])
     data = report.build(conn)
     assert data["kill"][0]["loot/kill"] == 20
-    assert data["kill_totals"]["unpriced drops"] == 6
-    assert data["farm_totals"]["price coverage %"] == 40.0
+    assert data["kill_totals"]["value source"] == {"buyout": 0, "vendor": 4, "none": 6}
     md = report.render(data, "t")
-    assert "drops with no price (counted as 0): 6" in md and "price coverage: 40.0% (4/10 drops priced)" in md
+    assert md.count("value source: buyout 0%, vendor 40%, none 60% (10 drops)") == 2  # KILL and FARM
 
 
 def test_confidence_boundary_and_low_sample(tmp_path):
