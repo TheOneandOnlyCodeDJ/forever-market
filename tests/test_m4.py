@@ -37,9 +37,9 @@ def test_unvalued_drops_reach_footer(tmp_path):
     conn = _db(tmp_path, [("Wolf", 20, 0, {1: 4, 2: 6})], [(1, 0, 100)])
     data = report.build(conn)
     assert data["kill"][0]["loot/kill"] == 20
-    assert data["kill_totals"]["value source"] == {"buyout": 0, "vendor": 4, "none": 6}
+    assert data["kill_totals"]["value source"] == {"buyout": 0, "vendor": 4, "quest": 0, "none": 6}
     md = report.render(data, "t")
-    assert md.count("value source: buyout 0%, vendor 40%, none 60% (10 drops)") == 2  # KILL and FARM
+    assert md.count("value source: buyout 0%, vendor 40%, quest 0%, none 60% (10 drops)") == 2  # KILL and FARM
 
 
 def test_confidence_boundary_and_low_sample(tmp_path):

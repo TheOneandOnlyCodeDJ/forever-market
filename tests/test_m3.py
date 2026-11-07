@@ -57,7 +57,7 @@ def test_drop_rate_8_kills_2_drops(tmp_path):
     assert rates["Chunk of Boar Meat"] == 25.0
     assert measured == [{"item": "Light Leather", "source": "Fixture Wolf", "kills": 20, "drops": 4, "rate %": 20.0, "value/drop": None}]
     assert footer == {"sessions": 2, "characters": 2, "kills": 28,
-                      "value source": {"buyout": 0, "vendor": 0, "none": 12}}
+                      "value source": {"buyout": 0, "vendor": 0, "quest": 0, "none": 12}}
 
 
 def test_reimport_is_idempotent(tmp_path):

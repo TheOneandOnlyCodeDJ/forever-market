@@ -94,7 +94,7 @@ RATES = f"""SELECT r.session_id, r.source_name AS source, r.item_id, src.kills, 
             WHERE r.session_id IN ({LATEST}) AND src.kills > 0"""
 
 
-VALUE_SOURCES = ("buyout", "vendor", "none")
+VALUE_SOURCES = ("buyout", "vendor", "quest", "none")
 
 
 def value_of(conn, item_id):
@@ -105,7 +105,11 @@ def value_of(conn, item_id):
     vendor = vendor or 0
     if buyout and buyout >= vendor:
         return buyout, "buyout"
-    return (vendor, "vendor") if vendor else (0, "none")
+    if vendor:
+        return vendor, "vendor"
+    bonding = conn.execute("SELECT bonding FROM item WHERE id = ?", (item_id,)).fetchone()
+    # bonding 4 is a quest item: it cannot be sold, so a zero value is correct, not missing data
+    return (0, "quest") if bonding and bonding[0] == 4 else (0, "none")
 
 
 def _loot(conn, session_id, source):
