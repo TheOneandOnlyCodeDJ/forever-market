@@ -82,8 +82,8 @@ def test_unresolved_item_counted_not_raised(tmp_path, creds, capsys):
     out = blizzard.sync(conn, get=fake_get)
     assert out == {"houses": 2, "auctions": 2, "commodities": 0, "ids": 2, "missing": 1}
     t = report.build(conn)
-    assert t["api_totals"]["unresolved"] == 1 and t["api_totals"]["houses"] == ["Horde 1"]
-    assert t["api"][0] == {"item": "Peacebloom", "api minBO": 30, "api qty": 1, "tsm market": 20,
+    assert t["api_totals"]["unresolved"] == 1 and t["api_totals"]["house"] == 116
+    assert t["api"][0] == {"item": "Peacebloom", "api minBO": 30, "api qty": 1, "api listings": 1, "tsm market": 20,
                            "tsm minBO": None, "diff %": 50.0}
 
 

@@ -113,6 +113,9 @@ def build_html(data, generated_at=None, now=None):
         *_section("FLIP", cols["flip"], data["flip"][:15]),
         *_section("GATHER", cols["gather"], data["gather"][:15]),
         *_section("KILL", cols["kill"], data["kill"]),
+        *_section(f"API house {data['api_totals']['house'] or '-'} ({data['api_totals']['name'] or '-'})",
+                  cols["api"], data["api"]),
+        '<p class="empty">single house only: the five Horde houses are separate markets and are never summed</p>',
         *_section("Sources", ["source", "fetched_at", "age", "rows", "note"], sources),
         "</body></html>",
     ]

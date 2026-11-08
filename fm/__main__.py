@@ -13,11 +13,14 @@ def main(argv=None):
     sync_api = sync.add_parser("api")
     sync_api.add_argument("--houses", choices=("horde", "all"), default="horde",
                           help="horde = houses named Horde or Blackwater")
+    sync_api.add_argument("--house", type=int, help="sync only this house id")
     sync.add_parser("items")
     sync.add_parser("recipes")
     imp = sub.add_parser("import").add_subparsers(dest="what", required=True)
     imp.add_parser("loot").add_argument("--dry-run", action="store_true", help="print what would be imported, write nothing")
-    probe = sub.add_parser("api").add_subparsers(dest="what", required=True).add_parser("probe")
+    api_cmd = sub.add_parser("api").add_subparsers(dest="what", required=True)
+    probe = api_cmd.add_parser("probe")
+    api_cmd.add_parser("match")
     for ap in (probe, sync_api):
         ap.add_argument("--ruleset", type=int, default=1)
         ap.add_argument("--region", choices=blizzard.REGIONS, help="default BLIZZARD_REGION or us")
@@ -32,13 +35,16 @@ def main(argv=None):
         from fm import web
         web.serve(args.host, args.port)
         return 0
+    if args.cmd == "api" and args.what == "match":
+        blizzard.print_match(blizzard.match(db.connect()))
+        return 0
     if args.cmd == "api" or (args.cmd == "sync" and args.what == "api"):
         try:
             blizzard.credentials()  # before touching the DB
             if args.cmd == "api":
                 blizzard.probe(args.ruleset, args.region)
             else:
-                blizzard.sync(db.connect(), args.ruleset, args.houses, args.region)
+                blizzard.sync(db.connect(), args.ruleset, args.houses, args.region, house=args.house)
         except blizzard.MissingCredentials as e:
             print(e)
             return 2

@@ -1,5 +1,6 @@
 """Builds reports/digest.md and data/summary.json from the DB alone (no network)."""
 import json
+import os
 import statistics
 from datetime import datetime, timezone
 
@@ -11,7 +12,8 @@ SUBCLASS = {5: "Cloth", 6: "Leather", 9: "Herb", 10: "Elemental", 7: "Ore/Stone"
 NODE_YIELD = {9: 1.5, 7: 2.2, 6: 1.0, 5: 1.0}  # classic yield per node, by Trade Goods subclass
 TABLES = ["item", "price_realm", "price_region", "spell", "spell_reagent", "craft_output",
           "creature", "area", "drop", "kill_event", "loot_event", "node_area", "sync_log",
-          "loot_session", "loot_source", "loot_item_source", "loot_item", "api_house", "api_auction", "api_commodity"]
+          "loot_session", "loot_source", "loot_item_source", "loot_item", "api_house", "api_auction", "api_commodity",
+          "api_house_match"]
 COPPER = {"market", "minBO", "historical", "gap", "node value", "value", "cost", "sell", "profit", "copper",
           "vendor", "buyout", "api minBO", "tsm market", "tsm minBO",
           "copper/kill", "loot/kill", "total/kill", "value/drop"}
@@ -227,25 +229,38 @@ def boe(conn):
     return rows[:20], {"candidates": len(cands), "dropped none": none}
 
 
+def pick_house(conn, env=None):
+    """(house_id, chosen_by): FM_API_HOUSE, else best api_house_match with common >= 50, else most auctions."""
+    env = os.environ if env is None else env
+    if env.get("FM_API_HOUSE"):
+        return int(env["FM_API_HOUSE"]), "FM_API_HOUSE"
+    r = conn.execute("""SELECT house_id FROM api_house_match WHERE common >= 50
+                        ORDER BY 1.0 * exact / common DESC, median_diff, house_id LIMIT 1""").fetchone()
+    if r:
+        return r[0], "api_house_match"
+    r = conn.execute("SELECT house_id FROM api_house WHERE auctions > 0 ORDER BY auctions DESC, house_id LIMIT 1").fetchone()
+    return (r[0], "most auctions") if r else (None, None)
+
+
 def api(conn):
-    """Horde houses from the official API, per item: cheapest unit buyout vs local TSM realm prices."""
-    horde = "SELECT house_id FROM api_house WHERE name LIKE '%Horde%'"
-    rows = [dict(r) for r in conn.execute(f"""SELECT COALESCE(i.name, 'item ' || a.item_id) AS item,
-                 MIN(a.buyout / a.quantity) AS "api minBO", SUM(a.quantity) AS "api qty",
+    """One house from the official API, per item: cheapest unit buyout vs local TSM realm prices."""
+    house, chosen_by = pick_house(conn)
+    rows = [dict(r) for r in conn.execute("""SELECT COALESCE(i.name, 'item ' || a.item_id) AS item,
+                 MIN(a.buyout / a.quantity) AS "api minBO", SUM(a.quantity) AS "api qty", COUNT(*) AS "api listings",
                  NULLIF(p.market_value, 0) AS "tsm market", NULLIF(p.min_buyout, 0) AS "tsm minBO"
                FROM api_auction a LEFT JOIN item i ON i.id = a.item_id
                LEFT JOIN price_realm p ON p.item_id = a.item_id
-               WHERE a.house_id IN ({horde}) AND a.buyout > 0 AND a.quantity > 0
-               GROUP BY a.item_id ORDER BY "api minBO" DESC, a.item_id LIMIT 20""")]
+               WHERE a.house_id = ? AND a.buyout > 0 AND a.quantity > 0
+               GROUP BY a.item_id ORDER BY "api minBO" DESC, a.item_id LIMIT 20""", (house,))]
     for r in rows:
         m = r["tsm market"]
         r["diff %"] = round(100.0 * (r["api minBO"] - m) / m, 1) if m else None
+    h = conn.execute("SELECT name, ruleset_id FROM api_house WHERE house_id = ?", (house,)).fetchone()
     totals = {
-        "houses": [r[0] for r in conn.execute(f"SELECT name FROM api_house WHERE house_id IN ({horde}) ORDER BY house_id")],
-        "rulesets": [r[0] for r in conn.execute(f"SELECT DISTINCT ruleset_id FROM api_house WHERE house_id IN ({horde})")],
-        "auctions": conn.execute(f"SELECT COUNT(*) FROM api_auction WHERE house_id IN ({horde})").fetchone()[0],
-        "unresolved": conn.execute(f"""SELECT COUNT(DISTINCT item_id) FROM api_auction WHERE house_id IN ({horde})
-                                       AND item_id NOT IN (SELECT id FROM item)""").fetchone()[0],
+        "house": house, "name": h[0] if h else None, "ruleset": h[1] if h else None, "chosen by": chosen_by,
+        "auctions": conn.execute("SELECT COUNT(*) FROM api_auction WHERE house_id = ?", (house,)).fetchone()[0],
+        "unresolved": conn.execute("""SELECT COUNT(DISTINCT item_id) FROM api_auction WHERE house_id = ?
+                                      AND item_id NOT IN (SELECT id FROM item)""", (house,)).fetchone()[0],
     }
     return rows, totals
 
@@ -340,7 +355,7 @@ COLUMNS = {
     "boe": ["item", "ilvl", "q", "vendor", "buyout", "value", "premium", "listings", "sale rate", "flag"],
     "flip": ["item", "market", "minBO", "gap", "gap %"],
     "watch": ["item", "reason"],
-    "api": ["item", "api minBO", "api qty", "tsm market", "diff %"],
+    "api": ["item", "api minBO", "api qty", "api listings", "tsm market", "diff %"],
 }
 
 
@@ -389,11 +404,12 @@ def _api_lines(data):
     t = data["api_totals"]
     if not data["api"]:
         return ["no api data yet", "", "rows: 0", ""]
-    return ["official Blizzard API, Horde houses only. api minBO = min(buyout / quantity) per unit, api qty = "
-            "sum(quantity); tsm market = local realm market value; diff % = 100 x (api minBO - tsm market) / "
+    return [f"official Blizzard API, house {t['house']} ({t['name']}, ruleset {t['ruleset']}, chosen by "
+            f"{t['chosen by']}). api minBO = min(buyout / quantity) per unit, api qty = sum(quantity), api listings = "
+            "auction rows; tsm market = local realm market value; diff % = 100 x (api minBO - tsm market) / "
             "tsm market. Top 20 by api minBO.", "", *_table(COLUMNS["api"], data["api"]),
-            f"houses used: {', '.join(t['houses'])}; ruleset {', '.join(map(str, t['rulesets']))}; auctions read: "
-            f"{t['auctions']}; unresolved ids: {t['unresolved']}; one ruleset only: houses are identical across rulesets", ""]
+            f"auctions read: {t['auctions']}; unresolved ids: {t['unresolved']}; single house only: the five Horde "
+            "houses are separate markets and are never summed", ""]
 
 
 def render(data, generated_at):
@@ -463,10 +479,11 @@ def run(conn, md_path=ROOT / "reports" / "digest.md", json_path=ROOT / "data" / 
             "boe_totals": "candidates before the value filter; dropped none = candidates with value source none",
             "flip": "market >= 10000 copper, minBO <= 0.7 x market, sorted by gap, cap 25",
             "watch": "recipe outputs / drops with no realm price",
-            "api": "official API auctions in Horde houses per item: api minBO = min(buyout / quantity) copper, "
-                   "api qty = sum(quantity), tsm market/minBO = realm TSM copper (null if absent), diff % vs tsm "
+            "api": "official API auctions in one house per item: api minBO = min(buyout / quantity) copper, "
+                   "api qty = sum(quantity), api listings = auction rows, tsm market/minBO = realm TSM copper (null if absent), diff % vs tsm "
                    "market; top 20 by api minBO",
-            "api_totals": "houses (names), rulesets, auctions read, unresolved = distinct item ids not in item",
+            "api_totals": "house id, name, ruleset, chosen by (FM_API_HOUSE, api_house_match or most auctions), "
+                          "auctions read in that house, unresolved = distinct item ids not in item",
         },
         "columns": COLUMNS,
     }

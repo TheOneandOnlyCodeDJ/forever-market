@@ -47,3 +47,6 @@ CREATE TABLE IF NOT EXISTS api_auction (
 CREATE TABLE IF NOT EXISTS api_commodity (
   house_id INTEGER, item_id INTEGER, quantity INTEGER, unit_price INTEGER, captured_at TEXT
 );
+CREATE TABLE IF NOT EXISTS api_house_match (
+  house_id INTEGER PRIMARY KEY, common INTEGER, exact INTEGER, median_diff REAL, scored_at TEXT
+);

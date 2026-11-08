@@ -2,6 +2,7 @@
 import base64
 import json
 import os
+import statistics
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
@@ -137,19 +138,55 @@ def store_house(conn, ruleset, house_id, name, payload, commodities, captured_at
 
 
 def probe(ruleset=1, region=None, get=get):
+    # the live index carries only `key` and `id` per ruleset, no name
     for rid, name in rulesets(get("/data/wow/ruleset/index", region=region)):
-        print(f"ruleset {rid}: {name}")
+        print(f"ruleset {rid}: {name or '-'}")
     rs = get(f"/data/wow/ruleset/{ruleset}", region=region)
-    print(f"ruleset {ruleset} detail: name={_name(rs.get('name'))} status={rs.get('status')} "
+    print(f"ruleset {ruleset} detail: name={_name(rs.get('name')) or '-'} status={rs.get('status')} "
           f"auctions={rs.get('auctions')}")
     for hid, name in houses(get(house_path(ruleset), region=region)):
         print(f"house {hid}: {name}")
 
 
-def sync(conn, ruleset=1, which="horde", region=None, get=get):
+def score(pairs):
+    """[(api unit minBO, tsm minBO)] -> (common, exact within 1 copper, median relative difference)."""
+    pairs = [(a, t) for a, t in pairs if a and t]
+    if not pairs:
+        return 0, 0, None
+    return (len(pairs), sum(abs(a - t) <= 1 for a, t in pairs),
+            statistics.median(abs(a - t) / t for a, t in pairs))
+
+
+def match(conn):
+    """Score every house with auctions against price_realm.min_buyout, persist, return best first."""
+    pairs = {}
+    for hid, a, t in conn.execute("""SELECT a.house_id, MIN(a.buyout / a.quantity), p.min_buyout
+            FROM api_auction a JOIN price_realm p ON p.item_id = a.item_id
+            WHERE a.buyout > 0 AND a.quantity > 0 AND p.min_buyout > 0 GROUP BY a.house_id, a.item_id"""):
+        pairs.setdefault(hid, []).append((a, t))
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    rows = [(hid, *score(p), now) for hid, p in pairs.items()]
+    rows.sort(key=lambda r: (-r[2] / r[1], r[3], r[0]))
+    conn.execute("DELETE FROM api_house_match")
+    conn.executemany("INSERT INTO api_house_match VALUES (?,?,?,?,?)", rows)
+    conn.commit()
+    return rows
+
+
+def print_match(rows):
+    print(f"{'house':>6} {'common':>7} {'exact':>6} {'exact %':>8} {'median diff':>12}")
+    for hid, common, exact, med, _ in rows:
+        print(f"{hid:>6} {common:>7} {exact:>6} {100 * exact / common:>7.1f}% {med:>12.2f}")
+    best = next((r[0] for r in rows if r[1] >= 50), None)
+    print(f"recommended house: {best if best is not None else '-'}")
+
+
+def sync(conn, ruleset=1, which="horde", region=None, get=get, house=None):
     get(f"/data/wow/ruleset/{ruleset}", region=region)  # fail fast on a bad ruleset
     kept = [(hid, name) for hid, name in houses(get(house_path(ruleset), region=region))
-            if which == "all" or "Horde" in name or "Blackwater" in name]
+            if hid == house or house is None and (which == "all" or "Horde" in name or "Blackwater" in name)]
+    if house is not None and not kept:
+        raise BlizzardError(None, f"house {house} not in ruleset {ruleset} index")
     known = {r[0] for r in conn.execute("SELECT id FROM item")}
     ids, n_auctions, n_comm = set(), 0, 0
     for hid, name in kept:

@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from fm import db, report, web  # noqa: E402
 
-SECTIONS = ["FARM", "BOE", "CRAFT", "FLIP", "GATHER", "KILL", "Sources"]
+SECTIONS = ["FARM", "BOE", "CRAFT", "FLIP", "GATHER", "KILL", "API house - (-)", "Sources"]
 
 
 def test_build_html_empty_db(tmp_path):
