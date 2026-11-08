@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: ForeverMarketBridge
+## Notes: Forever API prices from forever-market as TSM price sources
+## Dependencies: TradeSkillMaster
+## SavedVariables: ForeverMarketPrice
+
+ForeverMarketBridge.lua

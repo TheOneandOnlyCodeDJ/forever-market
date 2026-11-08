@@ -1,0 +1,18 @@
+--- TradeSkillMaster/App/API.lua	2026-11-09 09:37:59.347285373 +1000
++++ TradeSkillMaster/App/API.lua	2026-11-09 09:37:59.360237982 +1000
+@@ -265,6 +265,15 @@
+ 	return CustomPrice.GetValue(customPriceStr, itemString)
+ end
+ 
++---Registers an external price source (forever-market local patch).
++---@param key string The price source key
++---@param label string The description shown in TSM
++---@param callback fun(itemString: string): number? Returns the price in copper
++function TSM_API.RegisterPriceSource(key, label, callback)
++	private.CheckCallMethod(key)
++	CustomString.RegisterSource("ForeverMarket", key, label, callback, CustomString.SOURCE_TYPE.NORMAL)
++end
++
+ 
+ 
+ -- ============================================================================

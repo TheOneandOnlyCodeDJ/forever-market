@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from fm import blizzard, db, import_loot, report, sync_items, sync_prices, sync_recipes
+from fm import blizzard, db, export_tsm, import_loot, report, sync_items, sync_prices, sync_recipes
 
 
 def main(argv=None):
@@ -24,6 +24,7 @@ def main(argv=None):
     for ap in (probe, sync_api):
         ap.add_argument("--ruleset", type=int, default=1)
         ap.add_argument("--region", choices=blizzard.REGIONS, help="default BLIZZARD_REGION or us")
+    sub.add_parser("export").add_subparsers(dest="what", required=True).add_parser("tsm")
     sub.add_parser("report")
     sub.add_parser("status")
     srv = sub.add_parser("serve")
@@ -56,6 +57,8 @@ def main(argv=None):
         import_loot.run(None if args.dry_run else db.connect(), dry_run=args.dry_run)
         return 0
     conn = db.connect()
+    if args.cmd == "export":
+        return export_tsm.run(conn)
     if args.cmd == "sync":
         if args.what == "prices":
             sync_prices.run(conn, fixtures=args.fixtures)
