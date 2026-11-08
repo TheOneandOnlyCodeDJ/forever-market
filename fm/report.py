@@ -11,9 +11,9 @@ SUBCLASS = {5: "Cloth", 6: "Leather", 9: "Herb", 10: "Elemental", 7: "Ore/Stone"
 NODE_YIELD = {9: 1.5, 7: 2.2, 6: 1.0, 5: 1.0}  # classic yield per node, by Trade Goods subclass
 TABLES = ["item", "price_realm", "price_region", "spell", "spell_reagent", "craft_output",
           "creature", "area", "drop", "kill_event", "loot_event", "node_area", "sync_log",
-          "loot_session", "loot_source", "loot_item_source", "loot_item"]
+          "loot_session", "loot_source", "loot_item_source", "loot_item", "api_house", "api_auction", "api_commodity"]
 COPPER = {"market", "minBO", "historical", "gap", "node value", "value", "cost", "sell", "profit", "copper",
-          "vendor", "buyout",
+          "vendor", "buyout", "api minBO", "tsm market", "tsm minBO",
           "copper/kill", "loot/kill", "total/kill", "value/drop"}
 NAME = "COALESCE(i.name, 'item ' || p.item_id)"
 
@@ -227,6 +227,29 @@ def boe(conn):
     return rows[:20], {"candidates": len(cands), "dropped none": none}
 
 
+def api(conn):
+    """Horde houses from the official API, per item: cheapest unit buyout vs local TSM realm prices."""
+    horde = "SELECT house_id FROM api_house WHERE name LIKE '%Horde%'"
+    rows = [dict(r) for r in conn.execute(f"""SELECT COALESCE(i.name, 'item ' || a.item_id) AS item,
+                 MIN(a.buyout / a.quantity) AS "api minBO", SUM(a.quantity) AS "api qty",
+                 NULLIF(p.market_value, 0) AS "tsm market", NULLIF(p.min_buyout, 0) AS "tsm minBO"
+               FROM api_auction a LEFT JOIN item i ON i.id = a.item_id
+               LEFT JOIN price_realm p ON p.item_id = a.item_id
+               WHERE a.house_id IN ({horde}) AND a.buyout > 0 AND a.quantity > 0
+               GROUP BY a.item_id ORDER BY "api minBO" DESC, a.item_id LIMIT 20""")]
+    for r in rows:
+        m = r["tsm market"]
+        r["diff %"] = round(100.0 * (r["api minBO"] - m) / m, 1) if m else None
+    totals = {
+        "houses": [r[0] for r in conn.execute(f"SELECT name FROM api_house WHERE house_id IN ({horde}) ORDER BY house_id")],
+        "rulesets": [r[0] for r in conn.execute(f"SELECT DISTINCT ruleset_id FROM api_house WHERE house_id IN ({horde})")],
+        "auctions": conn.execute(f"SELECT COUNT(*) FROM api_auction WHERE house_id IN ({horde})").fetchone()[0],
+        "unresolved": conn.execute(f"""SELECT COUNT(DISTINCT item_id) FROM api_auction WHERE house_id IN ({horde})
+                                       AND item_id NOT IN (SELECT id FROM item)""").fetchone()[0],
+    }
+    return rows, totals
+
+
 def status(conn):
     """Latest sync_log row per source and row count per table."""
     sources = [dict(r) for r in conn.execute("""SELECT source, fetched_at, rows, note FROM sync_log s
@@ -293,6 +316,7 @@ def build(conn):
     kill_rows, measured, kill_totals = kill(conn)
     farm_rows, farm_pace, farm_totals = farm(conn, kill_rows)
     boe_rows, boe_totals = boe(conn)
+    api_rows, api_totals = api(conn)
     for r in kill_rows:
         del r["_loot"]
     return {"sources": sources, "counts": counts, "snapshot": snapshot, "movers": movers,
@@ -300,6 +324,7 @@ def build(conn):
             "farm": farm_rows, "farm_pace": farm_pace, "farm_totals": farm_totals,
             "boe": boe_rows, "boe_totals": boe_totals,
             "craft": craft_rows, "craft_skipped": craft_skipped,
+            "api": api_rows, "api_totals": api_totals,
             "flip": flip, "watch": watch, "watch_total": watch_total}
 
 
@@ -315,6 +340,7 @@ COLUMNS = {
     "boe": ["item", "ilvl", "q", "vendor", "buyout", "value", "premium", "listings", "sale rate", "flag"],
     "flip": ["item", "market", "minBO", "gap", "gap %"],
     "watch": ["item", "reason"],
+    "api": ["item", "api minBO", "api qty", "tsm market", "diff %"],
 }
 
 
@@ -359,6 +385,17 @@ def _boe_lines(data):
             "flags are price-and-liquidity signals, not proof of buyer interest", ""]
 
 
+def _api_lines(data):
+    t = data["api_totals"]
+    if not data["api"]:
+        return ["no api data yet", "", "rows: 0", ""]
+    return ["official Blizzard API, Horde houses only. api minBO = min(buyout / quantity) per unit, api qty = "
+            "sum(quantity); tsm market = local realm market value; diff % = 100 x (api minBO - tsm market) / "
+            "tsm market. Top 20 by api minBO.", "", *_table(COLUMNS["api"], data["api"]),
+            f"houses used: {', '.join(t['houses'])}; ruleset {', '.join(map(str, t['rulesets']))}; auctions read: "
+            f"{t['auctions']}; unresolved ids: {t['unresolved']}; one ruleset only: houses are identical across rulesets", ""]
+
+
 def render(data, generated_at):
     snap = [{"metric": r["metric"], "value": gold(r["value"]) if r["unit"] == "copper" else num(r["value"])}
             for r in data["snapshot"]]
@@ -385,6 +422,7 @@ def render(data, generated_at):
              "market value (see WATCH); {priced} outputs fully priced.".format(**data["craft_skipped"]), "",
              "## FLIP", "", "realm items, market >= 1g, minBO <= 0.7 x market; top 25 by gap.", "",
              *_table(COLUMNS["flip"], data["flip"]),
+             "## API", "", *_api_lines(data),
              "## WATCH", "",
              f"recipe outputs or drops with no realm price; showing {len(data['watch'])} "
              f"of {data['watch_total']}.", "",
@@ -425,11 +463,15 @@ def run(conn, md_path=ROOT / "reports" / "digest.md", json_path=ROOT / "data" / 
             "boe_totals": "candidates before the value filter; dropped none = candidates with value source none",
             "flip": "market >= 10000 copper, minBO <= 0.7 x market, sorted by gap, cap 25",
             "watch": "recipe outputs / drops with no realm price",
+            "api": "official API auctions in Horde houses per item: api minBO = min(buyout / quantity) copper, "
+                   "api qty = sum(quantity), tsm market/minBO = realm TSM copper (null if absent), diff % vs tsm "
+                   "market; top 20 by api minBO",
+            "api_totals": "houses (names), rulesets, auctions read, unresolved = distinct item ids not in item",
         },
         "columns": COLUMNS,
     }
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json.dumps({"_meta": meta, **data}, indent=1))
     print(f"wrote {md_path} and {json_path}: " + ", ".join(
-        f"{k} {len(data[k])}" for k in ("snapshot", "movers", "gather", "kill", "measured", "farm", "boe", "craft", "flip", "watch")))
+        f"{k} {len(data[k])}" for k in ("snapshot", "movers", "gather", "kill", "measured", "farm", "boe", "craft", "flip", "api", "watch")))
     return data

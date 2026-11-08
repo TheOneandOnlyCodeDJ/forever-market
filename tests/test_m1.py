@@ -22,7 +22,7 @@ def test_schema_applied_twice_is_noop(tmp_path):
     conn.close()
     conn = db.connect(path)
     assert [tuple(r) for r in _schema(conn)] == first
-    assert sum(r[0] == "table" for r in first) == len(report.TABLES) == 17
+    assert sum(r[0] == "table" for r in first) == len(report.TABLES) == 20
     assert conn.execute("SELECT note FROM sync_log").fetchall()[0][0] == "kept"
 
 
@@ -39,10 +39,11 @@ def test_digest_from_fixture_db(tmp_path):
     conn.row_factory = sqlite3.Row
     data = report.run(conn, tmp_path / "digest.md", tmp_path / "summary.json")
     md = (tmp_path / "digest.md").read_text()
-    for section in ("## SNAPSHOT", "## GATHER", "## KILL", "### MEASURED", "## FARM", "## BOE", "## CRAFT", "## FLIP", "## WATCH"):
+    for section in ("## SNAPSHOT", "## GATHER", "## KILL", "### MEASURED", "## FARM", "## BOE", "## CRAFT", "## FLIP", "## API", "## WATCH"):
         assert section in md
     counts = [int(line.split()[1]) for line in md.splitlines() if line.startswith("rows: ")]
-    assert len(counts) == 12 and all(n > 0 for n in counts)  # every table non-empty on fixtures
+    # every table non-empty on fixtures except API: no real API capture is checked in yet
+    assert len(counts) == 13 and counts[11] == 0 and all(n > 0 for i, n in enumerate(counts) if i != 11)
     gather = {r["item"]: r for r in data["gather"]}
     assert gather["Peacebloom"]["node value"] == 33  # 22c x 1.5
     assert gather["Copper Ore"]["node value"] == 132  # 60c x 2.2

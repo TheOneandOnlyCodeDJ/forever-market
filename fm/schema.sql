@@ -36,3 +36,14 @@ CREATE TABLE IF NOT EXISTS loot_item_source (session_id TEXT, source_name TEXT, 
 CREATE TABLE IF NOT EXISTS loot_item (
   session_id TEXT, item_id INTEGER, count INTEGER, vendor INTEGER, name TEXT, quality INTEGER
 );
+CREATE TABLE IF NOT EXISTS api_house (
+  house_id INTEGER PRIMARY KEY, ruleset_id INTEGER, name TEXT, faction TEXT, auctions INTEGER,
+  commodities INTEGER, fetched_at TEXT
+);
+CREATE TABLE IF NOT EXISTS api_auction (
+  house_id INTEGER, auction_id INTEGER, item_id INTEGER, quantity INTEGER, buyout INTEGER, bid INTEGER,
+  unit_price INTEGER, time_left TEXT, captured_at TEXT, PRIMARY KEY (house_id, auction_id)
+);
+CREATE TABLE IF NOT EXISTS api_commodity (
+  house_id INTEGER, item_id INTEGER, quantity INTEGER, unit_price INTEGER, captured_at TEXT
+);
