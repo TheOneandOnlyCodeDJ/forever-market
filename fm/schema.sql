@@ -57,3 +57,17 @@ CREATE TABLE IF NOT EXISTS price_history (
   PRIMARY KEY (at, source, region, house_id, item_id)
 );
 CREATE TABLE IF NOT EXISTS index_history (at TEXT, category TEXT, index_value REAL, PRIMARY KEY (at, category));
+-- Auction lifecycle: an auction that vanishes well before its duration could expire almost certainly sold.
+CREATE TABLE IF NOT EXISTS auction_life (
+  house_id INTEGER, auction_id INTEGER, item_id INTEGER, quantity INTEGER, buyout INTEGER,
+  time_left TEXT, first_seen TEXT, last_seen TEXT, gone_at TEXT, sold INTEGER,
+  PRIMARY KEY (house_id, auction_id)
+);
+CREATE INDEX IF NOT EXISTS idx_auction_life_item ON auction_life (item_id, gone_at);
+-- His own trades, imported from TSM Accounting (csvSales / csvBuys).
+CREATE TABLE IF NOT EXISTS trade (
+  at INTEGER, kind TEXT, item_id INTEGER, stack INTEGER, qty INTEGER, total INTEGER,
+  unit INTEGER, other TEXT, player TEXT, source TEXT,
+  PRIMARY KEY (at, kind, item_id, qty, total, player)
+);
+CREATE INDEX IF NOT EXISTS idx_trade_item ON trade (item_id, kind);

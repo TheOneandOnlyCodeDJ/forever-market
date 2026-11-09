@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 
-from fm import db, history, http
+from fm import auction_life, db, history, http
 from fm.db import ROOT
 
 ENV_PATH = ROOT / ".env"
@@ -200,6 +200,7 @@ def sync(conn, ruleset=1, which="horde", region=None, get=get, house=None):
         raise BlizzardError(None, f"house {house} not in ruleset {ruleset} index")
     known = {r[0] for r in conn.execute("SELECT id FROM item")}
     ids, n_auctions, n_comm = set(), 0, 0
+    life_totals = {}
     for hid, name in kept:
         payload = get(house_path(ruleset, hid), region=region)
         try:
@@ -212,6 +213,9 @@ def sync(conn, ruleset=1, which="horde", region=None, get=get, house=None):
             auctions, comm_rows = store_house(conn, ruleset, hid, name, payload, comm, now, region)
         else:
             auctions, comm_rows = auction_rows(hid, payload, now), commodity_rows(hid, comm, now)
+        if region == home:
+            life = auction_life.track(conn, hid, auctions)
+            life_totals = {k: life_totals.get(k, 0) + v for k, v in life.items()}
         history.append(conn, history.hour(), "api", region, hid, history.api_rows(auctions, comm_rows))
         n_auctions += len(auctions)
         n_comm += len(comm_rows)
@@ -219,6 +223,9 @@ def sync(conn, ruleset=1, which="horde", region=None, get=get, house=None):
     missing = len(ids - known)
     print(f"{region}: houses fetched: {len(kept)}, auctions: {n_auctions}, commodities: {n_comm}, "
           f"distinct item ids: {len(ids)}, ids missing from item: {missing}")
+    if life_totals:
+        print(f"auction life: new {life_totals.get('new', 0)}, still listed {life_totals.get('seen', 0)}, "
+              f"gone {life_totals.get('gone', 0)}, inferred sold {life_totals.get('sold', 0)}")
     db.log_sync(conn, "blizzard api", n_auctions + n_comm,
                 f"{region}, ruleset {ruleset}, {len(kept)} houses, {missing} ids not in item")
     return {"houses": len(kept), "auctions": n_auctions, "commodities": n_comm, "ids": len(ids), "missing": missing}

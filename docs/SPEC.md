@@ -65,6 +65,21 @@ looted coin only, item value is in `items[id].vendor` (or the addon's configured
 
 `LootGoblin` is a different addon and only writes scan diagnostics; ignore it.
 
+## Sold inference
+
+The API has no transaction history, so sales are inferred: every auction id is tracked across
+hourly snapshots in `auction_life`. An auction that disappears while its remaining duration
+could not have expired is counted as a sale (`sold = 1`). The rule is deliberately conservative:
+each `time_left` bucket contributes a lower bound only (VERY_LONG 12h, LONG 4h, MEDIUM 1h, SHORT
+0), so an expiry can never be mistaken for a sale, and cancellations are still counted as sales
+because the API cannot distinguish them. Commodities are not tracked.
+
+His own transactions come from TSM Accounting (`r@<realm>@internalData@csvSales` and `csvBuys`),
+imported by `fm import trades` into the `trade` table with the real price paid or received.
+
+The `SOLD` digest section puts both next to TSM's modelled `sale_rate` so the three numbers can
+be compared, and it is explicit that they measure different things.
+
 ## Database
 
 `data/market.db`, schema in `fm/schema.sql`. Tables:

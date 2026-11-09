@@ -11,6 +11,7 @@ ExecStart=/usr/bin/python3 -m fm sync prices
 ExecStart=/usr/bin/python3 -m fm sync api --regions us --house best
 # a TSM update wipes our two local patches; repair them every hour before exporting
 ExecStart=-/usr/bin/python3 -m fm patch-tsm
+ExecStart=-/usr/bin/python3 -m fm import trades
 ExecStart=/usr/bin/python3 -m fm prune
 ExecStart=/usr/bin/python3 -m fm report
 # "-": export tsm exits 3 while Wow.exe runs; export addon must still run to write its pending file

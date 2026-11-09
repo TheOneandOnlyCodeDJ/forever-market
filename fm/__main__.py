@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from fm import blizzard, db, doctor, export_addon, export_tsm, history, import_loot, prune, report, sync_items, sync_prices, sync_recipes, tsm_patch
+from fm import blizzard, db, doctor, export_addon, export_tsm, history, import_loot, prune, report, sync_items, sync_prices, sync_recipes, trades, tsm_patch
 
 
 def main(argv=None):
@@ -20,6 +20,7 @@ def main(argv=None):
     sync.add_parser("recipes")
     imp = sub.add_parser("import").add_subparsers(dest="what", required=True)
     imp.add_parser("loot").add_argument("--dry-run", action="store_true", help="print what would be imported, write nothing")
+    imp.add_parser("trades")
     api_cmd = sub.add_parser("api").add_subparsers(dest="what", required=True)
     probe = api_cmd.add_parser("probe")
     api_cmd.add_parser("match")
@@ -73,6 +74,8 @@ def main(argv=None):
             return 1
         return 0
     if args.cmd == "import":
+        if args.what == "trades":
+            return trades.run(db.connect())
         import_loot.run(None if args.dry_run else db.connect(), dry_run=args.dry_run)
         return 0
     conn = db.connect()

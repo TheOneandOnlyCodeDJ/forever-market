@@ -10,7 +10,7 @@ from fm.fmt import coin, gold, num, pct
 SUBCLASS = {5: "Cloth", 6: "Leather", 9: "Herb", 10: "Elemental", 7: "Ore/Stone", 8: "Meat",
             12: "Enchanting", 11: "Other", 1: "Parts"}
 NODE_YIELD = {9: 1.5, 7: 2.2, 6: 1.0, 5: 1.0}  # classic yield per node, by Trade Goods subclass
-TABLES = ["item", "price_realm", "price_region", "spell", "spell_reagent", "craft_output",
+TABLES = ["item", "price_realm", "price_region", "spell", "spell_reagent", "craft_output", "trade", "auction_life",
           "creature", "area", "drop", "kill_event", "loot_event", "node_area", "sync_log",
           "loot_session", "loot_source", "loot_item_source", "loot_item", "api_house", "api_auction", "api_commodity",
           "api_house_match", "price_history", "index_history"]
@@ -267,6 +267,34 @@ def api(conn):
     return rows, totals
 
 
+def sold(conn, limit=25):
+    """Two independent views of what actually sells: API disappearance, and his own TSM trades."""
+    rows = conn.execute(
+        """SELECT a.item_id, COALESCE(i.name, 'item ' || a.item_id) AS item,
+                  COUNT(*) AS "api sold", SUM(a.quantity) AS "api qty",
+                  CAST(AVG(a.buyout * 1.0 / NULLIF(a.quantity, 0)) AS INTEGER) AS "api avg unit",
+                  g.sale_rate AS "tsm rate", g.sold_per_day AS "tsm sold/day",
+                  t.n AS "my sales", t.avg_unit AS "my avg unit"
+           FROM auction_life a
+           LEFT JOIN item i ON i.id = a.item_id
+           LEFT JOIN price_region g ON g.item_id = a.item_id
+           LEFT JOIN (SELECT item_id, COUNT(*) AS n, CAST(AVG(unit) AS INTEGER) AS avg_unit
+                      FROM trade WHERE kind = 'sale' GROUP BY item_id) t ON t.item_id = a.item_id
+           WHERE a.sold = 1
+           GROUP BY a.item_id
+           ORDER BY SUM(a.quantity) DESC, a.item_id LIMIT ?""", (limit,)).fetchall()
+    totals = dict(conn.execute(
+        """SELECT COUNT(*) AS tracked, COALESCE(SUM(gone_at IS NOT NULL), 0) AS gone,
+                  COALESCE(SUM(sold), 0) AS sold FROM auction_life""").fetchone())
+    mine = dict(conn.execute(
+        """SELECT COALESCE(SUM(kind = 'sale'), 0) AS sales,
+                  COALESCE(SUM(CASE WHEN kind = 'sale' THEN total ELSE 0 END), 0) AS sold_copper,
+                  COALESCE(SUM(kind = 'buy'), 0) AS buys,
+                  COALESCE(SUM(CASE WHEN kind = 'buy' THEN total ELSE 0 END), 0) AS bought_copper
+           FROM trade""").fetchone())
+    return [dict(r) for r in rows], totals, mine
+
+
 def status(conn):
     """Latest sync_log row per source and row count per table."""
     sources = [dict(r) for r in conn.execute("""SELECT source, fetched_at, rows, note FROM sync_log s
@@ -330,6 +358,7 @@ def build(conn):
     watch_total = conn.execute("""SELECT COUNT(*) FROM (SELECT item_id FROM craft_output
                                   UNION SELECT item_id FROM "drop")""").fetchone()[0]
     craft_rows, craft_skipped = craft(conn)
+    sold_rows, sold_totals, trade_totals = sold(conn)
     kill_rows, measured, kill_totals = kill(conn)
     farm_rows, farm_pace, farm_totals = farm(conn, kill_rows)
     boe_rows, boe_totals = boe(conn)
@@ -342,7 +371,8 @@ def build(conn):
             "boe": boe_rows, "boe_totals": boe_totals,
             "craft": craft_rows, "craft_skipped": craft_skipped,
             "api": api_rows, "api_totals": api_totals,
-            "flip": flip, "watch": watch, "watch_total": watch_total}
+            "flip": flip, "watch": watch, "watch_total": watch_total,
+            "sold": sold_rows, "sold_totals": sold_totals, "trade_totals": trade_totals}
 
 
 COLUMNS = {
@@ -356,6 +386,7 @@ COLUMNS = {
     "measured": ["item", "source", "kills", "drops", "rate %", "value/drop"],
     "boe": ["item", "ilvl", "q", "vendor", "buyout", "value", "premium", "listings", "sale rate", "flag"],
     "flip": ["item", "market", "minBO", "gap", "gap %"],
+    "sold": ["item", "api sold", "api qty", "api avg unit", "tsm rate", "tsm sold/day", "my sales", "my avg unit"],
     "watch": ["item", "reason"],
     "api": ["item", "api minBO", "api qty", "api listings", "tsm market", "diff %"],
 }
@@ -441,6 +472,16 @@ def render(data, generated_at):
              "## FLIP", "", "realm items, market >= 1g, minBO <= 0.7 x market; top 25 by gap.", "",
              *_table(COLUMNS["flip"], data["flip"]),
              "## API", "", *_api_lines(data),
+             "## SOLD", "",
+             "api sold = auctions that vanished while their remaining duration could not have expired, "
+             "so cancellations and real sales both count here; tsm rate is the modelled sale rate. "
+             "my sales come from your own TSM Accounting log.", "",
+             *_table(COLUMNS["sold"], data["sold"]),
+             "", "auctions tracked: {tracked}, gone: {gone}, inferred sold: {sold}".format(**data["sold_totals"]),
+             "your trades: {sales} sales worth {sold_g}, {buys} buys costing {buy_g}".format(
+                 sold_g=gold(data["trade_totals"]["sold_copper"] or 0),
+                 buy_g=gold(data["trade_totals"]["bought_copper"] or 0),
+                 **{k: data["trade_totals"][k] or 0 for k in ("sales", "buys")}),
              "## WATCH", "",
              f"recipe outputs or drops with no realm price; showing {len(data['watch'])} "
              f"of {data['watch_total']}.", "",
