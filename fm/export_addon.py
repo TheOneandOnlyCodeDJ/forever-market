@@ -66,11 +66,12 @@ def build(conn, now=None):
         p = series[item].setdefault(at, {"t": _unix(at)})
         p.update(_known({"typical": market, "cheapest": lo, "qty": qty, "auctions": listings}))
     meta = {r[0]: r[1:] for r in conn.execute(
-        "SELECT id, name, quality, item_level, vendor_sell FROM item JOIN export_ids USING (id)")}
+        "SELECT id, name, quality, item_level, vendor_sell, class_id, sub_class FROM item JOIN export_ids USING (id)")}
     items = {}
     for i in ids:
-        n, q, il, vendor = meta.get(i, (None,) * 4)
-        items[f"i:{i}"] = _known({"n": n, "q": q, "il": il, "vendor": vendor, "regions": cheapest.get(i),
+        n, q, il, vendor, c, s = meta.get(i, (None,) * 6)
+        items[f"i:{i}"] = _known({"n": n, "q": q, "il": il, "vendor": vendor, "c": c, "s": s,
+                                  "regions": cheapest.get(i),
                                   "series": [series[i][at] for at in sorted(series[i])][-MAX_POINTS:]})
     indices = {}
     for at, cat, v in conn.execute("SELECT at, category, index_value FROM index_history ORDER BY category, at"):

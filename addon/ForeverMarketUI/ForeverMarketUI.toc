@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: ForeverMarketUI
+## Notes: Market window over the price history exported by forever-market (/fm)
+## OptionalDeps: TradeSkillMaster
+## SavedVariables: ForeverMarketData, ForeverMarketUISettings
+
+Util.lua
+Charts.lua
+ItemView.lua
+IndexView.lua
+Core.lua

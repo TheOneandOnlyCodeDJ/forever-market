@@ -1,0 +1,68 @@
+-- Fake WoW environment for running the addon under plain LuaJIT. Unknown widget methods are
+-- no-ops; the handful the addon or the smoke test reads back are implemented.
+local stub = { counts = {}, shift = false }
+local noop = function() end
+
+local Widget = {}
+local mt = { __index = function(_, k) return Widget[k] or noop end }
+
+local function new(kind, name, parent)
+	stub.counts[kind] = (stub.counts[kind] or 0) + 1
+	return setmetatable({ kind = kind, name = name, parent = parent, shown = true, scripts = {} }, mt)
+end
+
+function Widget:Show() self.shown = true end
+function Widget:Hide() self.shown = false end
+function Widget:IsShown() return self.shown end
+function Widget:SetShown(v) self.shown = v and true or false end
+function Widget:GetName() return self.name end
+function Widget:SetScript(event, fn) self.scripts[event] = fn end
+function Widget:GetScript(event) return self.scripts[event] end
+function Widget:CreateTexture() return new("Texture", nil, self) end
+function Widget:CreateFontString() return new("FontString", nil, self) end
+function Widget:SetSize(w, h) self.w, self.h = w, h end
+function Widget:SetWidth(w) self.w = w end
+function Widget:SetHeight(h) self.h = h end
+function Widget:GetWidth() return self.w or 0 end
+function Widget:GetHeight() return self.h or 0 end
+function Widget:SetTexture(path) self.texture = path end
+function Widget:GetTexture() return self.texture end
+function Widget:GetPoint() return "CENTER", UIParent, "CENTER", 0, 0 end
+function Widget:GetText() return self.text end
+function Widget:SetText(text)
+	self.text = text
+	if self.kind == "EditBox" and self.scripts.OnTextChanged then self.scripts.OnTextChanged(self, false) end
+end
+function Widget:Click()
+	if self.scripts.OnClick then self.scripts.OnClick(self, "LeftButton") end
+end
+
+function CreateFrame(kind, name, parent)
+	local f = new(kind, name, parent)
+	if name then _G[name] = f end
+	return f
+end
+
+UIParent = new("Frame", "UIParent")
+GameTooltip = new("GameTooltip", "GameTooltip")
+C_Timer = { After = function(_, fn) fn() end }
+UISpecialFrames = {}
+SlashCmdList = {}
+STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
+GetTime = os.clock
+time, date = os.time, os.date
+format, floor = string.format, math.floor
+tinsert = table.insert
+function IsShiftKeyDown() return stub.shift end
+
+-- Loads the files the toc lists, each called as (addonName, namespace) like the client does.
+function stub.load(dir)
+	local ns = {}
+	for line in io.lines(dir .. "/ForeverMarketUI.toc") do
+		local file = line:match("^([%w_]+%.lua)%s*$")
+		if file then assert(loadfile(dir .. "/" .. file))("ForeverMarketUI", ns) end
+	end
+	return ns
+end
+
+return stub
