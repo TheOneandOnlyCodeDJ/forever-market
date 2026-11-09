@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from fm import blizzard, db, export_tsm, import_loot, report, sync_items, sync_prices, sync_recipes
+from fm import blizzard, db, export_addon, export_tsm, history, import_loot, report, sync_items, sync_prices, sync_recipes
 
 
 def main(argv=None):
@@ -13,7 +13,9 @@ def main(argv=None):
     sync_api = sync.add_parser("api")
     sync_api.add_argument("--houses", choices=("horde", "all"), default="horde",
                           help="horde = houses named Horde or Blackwater")
-    sync_api.add_argument("--house", type=int, help="sync only this house id")
+    sync_api.add_argument("--house", type=lambda v: v if v == "best" else int(v),
+                          help="sync only this house id; `best` = the matched (else largest) house")
+    sync_api.add_argument("--regions", help="comma-separated, e.g. us,eu,kr,tw; overrides --region")
     sync.add_parser("items")
     sync.add_parser("recipes")
     imp = sub.add_parser("import").add_subparsers(dest="what", required=True)
@@ -24,7 +26,9 @@ def main(argv=None):
     for ap in (probe, sync_api):
         ap.add_argument("--ruleset", type=int, default=1)
         ap.add_argument("--region", choices=blizzard.REGIONS, help="default BLIZZARD_REGION or us")
-    sub.add_parser("export").add_subparsers(dest="what", required=True).add_parser("tsm")
+    export = sub.add_parser("export").add_subparsers(dest="what", required=True)
+    export.add_parser("tsm")
+    export.add_parser("addon")
     sub.add_parser("report")
     sub.add_parser("status")
     srv = sub.add_parser("serve")
@@ -45,7 +49,16 @@ def main(argv=None):
             if args.cmd == "api":
                 blizzard.probe(args.ruleset, args.region)
             else:
-                blizzard.sync(db.connect(), args.ruleset, args.houses, args.region, house=args.house)
+                conn = db.connect()
+                house = report.pick_house(conn)[0] if args.house == "best" else args.house
+                failed = 0
+                for region in args.regions.split(",") if args.regions else [args.region]:
+                    try:  # one region down must not cost the others their snapshot
+                        blizzard.sync(conn, args.ruleset, args.houses, region, house=house)
+                    except (blizzard.BlizzardError, OSError) as e:
+                        failed += 1
+                        print(f"{region}: FAILED: {e}")
+                return 1 if failed else 0
         except blizzard.MissingCredentials as e:
             print(e)
             return 2
@@ -58,10 +71,15 @@ def main(argv=None):
         return 0
     conn = db.connect()
     if args.cmd == "export":
-        return export_tsm.run(conn)
+        return (export_addon if args.what == "addon" else export_tsm).run(conn)
     if args.cmd == "sync":
         if args.what == "prices":
-            sync_prices.run(conn, fixtures=args.fixtures)
+            if "tsm_realm" not in sync_prices.run(conn, fixtures=args.fixtures):
+                n, (written, skipped) = history.snapshot_tsm(conn, blizzard.home_region())
+                print(f"price_history: {n} tsm rows; indices: "
+                      + (", ".join(f"{c} {v:.1f}" for c, v in sorted(written.items())) or "none"))
+                for c, have in sorted(skipped.items()):
+                    print(f"index skipped: {c} has {have} items in both snapshots, needs {history.MIN_ITEMS}")
         elif args.what == "recipes":
             sync_recipes.run(conn)
         else:

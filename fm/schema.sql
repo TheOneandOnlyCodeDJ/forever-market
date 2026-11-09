@@ -50,3 +50,10 @@ CREATE TABLE IF NOT EXISTS api_commodity (
 CREATE TABLE IF NOT EXISTS api_house_match (
   house_id INTEGER PRIMARY KEY, common INTEGER, exact INTEGER, median_diff REAL, scored_at TEXT
 );
+-- region is explicit: house ids repeat across regions. house_id 0 = TSM realm feed (no house).
+CREATE TABLE IF NOT EXISTS price_history (
+  at TEXT, source TEXT, region TEXT, house_id INTEGER, item_id INTEGER,
+  min_buyout INTEGER, market INTEGER, listings INTEGER, qty INTEGER,
+  PRIMARY KEY (at, source, region, house_id, item_id)
+);
+CREATE TABLE IF NOT EXISTS index_history (at TEXT, category TEXT, index_value REAL, PRIMARY KEY (at, category));

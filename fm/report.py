@@ -13,7 +13,7 @@ NODE_YIELD = {9: 1.5, 7: 2.2, 6: 1.0, 5: 1.0}  # classic yield per node, by Trad
 TABLES = ["item", "price_realm", "price_region", "spell", "spell_reagent", "craft_output",
           "creature", "area", "drop", "kill_event", "loot_event", "node_area", "sync_log",
           "loot_session", "loot_source", "loot_item_source", "loot_item", "api_house", "api_auction", "api_commodity",
-          "api_house_match"]
+          "api_house_match", "price_history", "index_history"]
 COPPER = {"market", "minBO", "historical", "gap", "node value", "value", "cost", "sell", "profit", "copper",
           "vendor", "buyout", "api minBO", "tsm market", "tsm minBO",
           "copper/kill", "loot/kill", "total/kill", "value/drop"}

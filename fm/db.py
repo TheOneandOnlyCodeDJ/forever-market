@@ -11,6 +11,8 @@ def connect(path=DB_PATH):
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA.read_text())
+    if "region" not in [r[1] for r in conn.execute("PRAGMA table_info(api_house)")]:
+        conn.execute("ALTER TABLE api_house ADD COLUMN region TEXT DEFAULT 'us'")  # the default backfills
     return conn
 
 

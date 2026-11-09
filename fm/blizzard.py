@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 
-from fm import db, http
+from fm import db, history, http
 from fm.db import ROOT
 
 ENV_PATH = ROOT / ".env"
@@ -123,7 +123,7 @@ def commodity_rows(house_id, entries, captured_at):
             for c in entries or []]
 
 
-def store_house(conn, ruleset, house_id, name, payload, commodities, captured_at):
+def store_house(conn, ruleset, house_id, name, payload, commodities, captured_at, region="us"):
     """Replace one house's rows wholesale."""
     auctions = auction_rows(house_id, payload, captured_at)
     comm = commodity_rows(house_id, commodities, captured_at)
@@ -131,8 +131,8 @@ def store_house(conn, ruleset, house_id, name, payload, commodities, captured_at
     conn.execute("DELETE FROM api_commodity WHERE house_id = ?", (house_id,))
     conn.executemany("INSERT OR REPLACE INTO api_auction VALUES (?,?,?,?,?,?,?,?,?)", auctions)
     conn.executemany("INSERT INTO api_commodity VALUES (?,?,?,?,?)", comm)
-    conn.execute("INSERT OR REPLACE INTO api_house VALUES (?,?,?,?,?,?,?)",
-                 (house_id, ruleset, name, faction(name), len(auctions), len(comm), captured_at))
+    conn.execute("INSERT OR REPLACE INTO api_house VALUES (?,?,?,?,?,?,?,?)",
+                 (house_id, ruleset, name, faction(name), len(auctions), len(comm), captured_at, region))
     conn.commit()
     return auctions, comm
 
@@ -181,7 +181,18 @@ def print_match(rows):
     print(f"recommended house: {best if best is not None else '-'}")
 
 
+def home_region():
+    try:
+        return credentials()[2]
+    except MissingCredentials:
+        return "us"
+
+
 def sync(conn, ruleset=1, which="horde", region=None, get=get, house=None):
+    """Every fetched house gets a price_history snapshot. Only the home region lands in the api_* tables:
+    house ids repeat across regions, so a foreign house would overwrite the home one."""
+    home = home_region()
+    region = region or home
     get(f"/data/wow/ruleset/{ruleset}", region=region)  # fail fast on a bad ruleset
     kept = [(hid, name) for hid, name in houses(get(house_path(ruleset), region=region))
             if hid == house or house is None and (which == "all" or "Horde" in name or "Blackwater" in name)]
@@ -197,13 +208,17 @@ def sync(conn, ruleset=1, which="horde", region=None, get=get, house=None):
             print(f"house {hid}: commodities endpoint failed ({e}), using inline commodities")
             comm = payload.get("commodities")
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        auctions, comm_rows = store_house(conn, ruleset, hid, name, payload, comm, now)
+        if region == home:
+            auctions, comm_rows = store_house(conn, ruleset, hid, name, payload, comm, now, region)
+        else:
+            auctions, comm_rows = auction_rows(hid, payload, now), commodity_rows(hid, comm, now)
+        history.append(conn, history.hour(), "api", region, hid, history.api_rows(auctions, comm_rows))
         n_auctions += len(auctions)
         n_comm += len(comm_rows)
         ids |= {r[2] for r in auctions if r[2] is not None} | {r[1] for r in comm_rows if r[1] is not None}
     missing = len(ids - known)
-    print(f"houses fetched: {len(kept)}, auctions: {n_auctions}, commodities: {n_comm}, "
+    print(f"{region}: houses fetched: {len(kept)}, auctions: {n_auctions}, commodities: {n_comm}, "
           f"distinct item ids: {len(ids)}, ids missing from item: {missing}")
     db.log_sync(conn, "blizzard api", n_auctions + n_comm,
-                f"ruleset {ruleset}, {len(kept)} houses, {missing} ids not in item")
+                f"{region}, ruleset {ruleset}, {len(kept)} houses, {missing} ids not in item")
     return {"houses": len(kept), "auctions": n_auctions, "commodities": n_comm, "ids": len(ids), "missing": missing}

@@ -28,3 +28,32 @@ patch -p0 < /path/to/forever-market/addon/tsm-patches/API.lua.patch   # or: git 
 
 Install the bridge by copying `addon/ForeverMarketBridge` into `Interface/AddOns`. If the patch is
 missing, the bridge prints a red warning naming `TSM_API.RegisterPriceSource` in chat.
+
+## Hourly history and the addon data feed
+
+`fm sync prices` and `fm sync api` each append one snapshot per hour to `price_history` (a second run in
+the same hour replaces it). `fm sync prices` also writes `index_history`: per item class,
+`100 x median(market now / market at the first snapshot)`, skipped below 20 items.
+
+`fm sync api --regions us,eu,kr,tw --house best` fetches one house per region. Only the home region
+(`BLIZZARD_REGION`, default `us`) lands in the `api_*` tables; other regions go to `price_history` only,
+because house ids repeat across regions.
+
+`fm export addon` writes `WTF/Account/<acct>/SavedVariables/ForeverMarketData.lua` (up to 2,000 items,
+168 hourly points each). While `Wow.exe` runs it writes `ForeverMarketData.pending.lua` instead and
+promotes it on the next run with the game closed.
+
+### Hourly timer
+
+The systemd user units in `deploy/` assume the repo is at `~/Projects/forever-market`:
+
+```
+mkdir -p ~/.config/systemd/user
+cp deploy/forever-market-sync.service deploy/forever-market-sync.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now forever-market-sync.timer
+journalctl --user -u forever-market-sync.service     # logs
+```
+
+The timer writes SavedVariables only when the client is closed: with the game open, `export tsm` is
+skipped and `export addon` writes only the pending file.
