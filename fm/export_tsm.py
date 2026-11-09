@@ -1,11 +1,11 @@
-"""API prices of the matched house -> WTF/Account/<acct>/SavedVariables/ForeverMarketPrice.lua for the bridge addon."""
+"""API prices of the matched house -> the bridge addon's Data.lua (never SavedVariables)."""
 import os
 import subprocess
 from pathlib import Path
 
-from fm import paths, report
+from fm import addon_files, paths, report
 
-FILE = "ForeverMarketPrice.lua"
+ADDON = "ForeverMarketBridge"
 
 
 def rows(conn):
@@ -38,10 +38,7 @@ def to_lua(data):
 
 
 def target(client_dir=paths.CLIENT_DIR):
-    accounts = sorted(Path(client_dir).glob("WTF/Account/*/SavedVariables"))
-    if len(accounts) != 1:
-        raise SystemExit(f"expected one account under {client_dir}/WTF/Account, found {len(accounts)}")
-    return accounts[0] / FILE
+    return addon_files.path(ADDON, client_dir=client_dir)
 
 
 def game_running():
@@ -51,11 +48,7 @@ def game_running():
 
 
 def run(conn, client_dir=paths.CLIENT_DIR):
-    if game_running():
-        print("Wow.exe is running; exit the game before exporting (it rewrites SavedVariables on logout)")
-        return 3
-    path = target(client_dir)
     data = rows(conn)
-    path.write_text(to_lua(data))
-    print(f"rows {len(data)} -> {path}")
+    path = addon_files.write(target(client_dir), to_lua(data))
+    print(f"rows {len(data)} -> {path} (the game can be open; /reload picks it up)")
     return 0

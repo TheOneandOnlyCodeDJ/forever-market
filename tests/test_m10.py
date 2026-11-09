@@ -55,7 +55,7 @@ def test_index_maths_and_19_item_floor(conn):
     assert dict(conn.execute("SELECT category, index_value FROM index_history WHERE at = ?", (H1,)))["Trade goods"] == 100.0
 
 
-def test_export_round_trip_cap_window_and_pending(conn, tmp_path, monkeypatch):
+def test_export_round_trip_cap_window(conn, tmp_path):
     conn.execute("INSERT INTO item (id, name, quality, item_level, vendor_sell) VALUES (1, 'Cerulean \"Dye\"', 1, 25, 7500)")
     blizzard.store_house(conn, 1, 113, "Horde", {"auctions": [{"id": 1, "item": {"id": 1}, "buyout": 250, "quantity": 1}]}, [], "t")
     hours = [f"2026-11-{d:02d}T{h:02d}:00:00Z" for d in range(1, 9) for h in range(24)]  # 192 hours
@@ -65,10 +65,10 @@ def test_export_round_trip_cap_window_and_pending(conn, tmp_path, monkeypatch):
     history.append(conn, hours[-1], "api", "eu", 113, [(1, 200, None, 1, 1)])
     conn.execute("INSERT INTO index_history VALUES (?, 'Forever 100', 84.2)", (hours[-1],))
     conn.executemany("INSERT INTO loot_item_source VALUES ('s', 'mob', ?, 1)", [(i,) for i in range(2, 2100)])
-    monkeypatch.setenv("FM_FORCE_GAME_RUNNING", "1")
     assert export_addon.run(conn, tmp_path) == 0
-    assert not (tmp_path / SV / "ForeverMarketData.lua").exists()
-    out = lua_table.parse((tmp_path / SV / "ForeverMarketData.pending.lua").read_text())["ForeverMarketData"]
+    data_file = tmp_path / "Interface/AddOns/ForeverMarketUI/Data.lua"
+    assert data_file.exists()  # written straight into the addon folder, no SavedVariables, no pending
+    out = lua_table.parse(data_file.read_text())["ForeverMarketData"]
     assert (out["house"], out["region"]) == (113, "us")
     assert out["indices"] == {"Forever 100": [{"t": 1794178800, "v": 84.2}]}
     # coverage is capped by bytes now, not by item count: everything priced fits, and a
@@ -83,11 +83,10 @@ def test_export_round_trip_cap_window_and_pending(conn, tmp_path, monkeypatch):
     assert out["items"]["i:2"] == {"res": "h", "series": {}}  # measured drop, no name or price known: nothing invented
 
 
-def test_pending_promoted_when_closed(conn, tmp_path, monkeypatch, capsys):
-    pending = tmp_path / SV / "ForeverMarketData.pending.lua"
-    pending.write_text("ForeverMarketData = {}\n")
-    monkeypatch.setenv("FM_FORCE_GAME_CLOSED", "1")
+def test_export_is_atomic_and_needs_no_closed_game(conn, tmp_path, capsys):
+    # the client never touches addon Lua files, so a running game is irrelevant now
     assert export_addon.run(conn, tmp_path) == 0
-    assert not pending.exists()
-    assert "items" in lua_table.parse((tmp_path / SV / "ForeverMarketData.lua").read_text())["ForeverMarketData"]
-    assert "promoted pending: yes" in capsys.readouterr().out
+    folder = tmp_path / "Interface/AddOns/ForeverMarketUI"
+    assert (folder / "Data.lua").exists()
+    assert not (folder / "Data.lua.tmp").exists()  # temp file is renamed, not left behind
+    assert "/reload picks it up" in capsys.readouterr().out

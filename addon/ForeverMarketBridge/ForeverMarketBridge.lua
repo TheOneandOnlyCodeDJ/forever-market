@@ -33,12 +33,12 @@ local function register(triesLeft)
 	print(format("ForeverMarketBridge: %d items loaded, sources api, apilist, fmvalue", n))
 end
 
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-frame:SetScript("OnEvent", function(self, _, name)
-	-- our own ADDON_LOADED: SavedVariables are only populated now, and TSM (a dependency) is already loaded
-	if name ~= ADDON then return end
-	self:UnregisterEvent("ADDON_LOADED")
-	if ForeverMarketPrice == nil then return end
+-- Data.lua is loaded before this file, so the price table is already populated: no SavedVariables
+-- and no event needed. TSM is a hard dependency, so TSM_API exists by now; retry a few frames anyway
+-- in case a future TSM changes its load order.
+if type(ForeverMarketPrice) == "table" then
 	register(RETRIES)
-end)
+else
+	print("|cffffa000ForeverMarketBridge: no price data yet. Run fm export tsm and /reload.|r")
+end
+

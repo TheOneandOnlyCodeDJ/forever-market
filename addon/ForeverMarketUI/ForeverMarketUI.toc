@@ -2,8 +2,9 @@
 ## Title: ForeverMarketUI
 ## Notes: Market window over the price history exported by forever-market (/fm)
 ## OptionalDeps: TradeSkillMaster
-## SavedVariables: ForeverMarketData, ForeverMarketUISettings
+## SavedVariables: ForeverMarketUISettings
 
+Data.lua
 Util.lua
 Charts.lua
 ItemView.lua

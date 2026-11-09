@@ -3,22 +3,13 @@ import os
 import re
 from datetime import datetime, timezone
 
-from fm import export_tsm, history, paths, report
+from fm import addon_files, history, paths, report
 
-FILE = "ForeverMarketData.lua"
-PENDING = "ForeverMarketData.pending.lua"
+ADDON = "ForeverMarketUI"
 MAX_POINTS = 168          # hourly points kept for tier 1 (one week)
 DAILY_POINTS = 90         # daily points kept for tier 2 (one quarter)
 TOP_API = 500             # tier 1 = this many items by cheapest listing
 MAX_BYTES = 3_000_000     # hard cap on the generated Lua
-
-
-def game_running():
-    if os.environ.get("FM_FORCE_GAME_RUNNING") == "1":
-        return True
-    if os.environ.get("FM_FORCE_GAME_CLOSED") == "1":
-        return False
-    return export_tsm.game_running()
 
 
 def lua(v):
@@ -134,24 +125,13 @@ def to_lua(data):
 
 
 def run(conn, client_dir=paths.CLIENT_DIR):
-    path = export_tsm.target(client_dir).with_name(FILE)
-    pending = path.with_name(PENDING)
     data, stats = build(conn)
-    text = to_lua(data).encode()
+    text = to_lua(data)
+    path = addon_files.write(addon_files.path(ADDON, client_dir=client_dir), text)
     points = sum(len(v["series"]) for v in data["items"].values())
-    if game_running():
-        pending.write_bytes(text)
-        print(f"Wow.exe is running: wrote {pending.name}, it will be promoted on the next run with the game closed")
-        dest, promoted = pending, False
-    else:
-        promoted = pending.exists()
-        if promoted:
-            pending.replace(path)
-        path.write_bytes(text)
-        dest = path
     print(f"items {len(data['items'])} (hourly {stats['tier1'] + stats['extras']}, daily {stats['tier2']}, "
           f"skipped for size {stats['skipped']} of {stats['priced']} priced), series points {points}, "
-          f"bytes {len(text)}, promoted pending: {'yes' if promoted else 'no'} -> {dest}")
-    if len(text) > MAX_BYTES:
-        print(f"warning: {len(text)} bytes is over the {MAX_BYTES} cap")
+          f"bytes {len(text.encode())} -> {path} (the game can be open; /reload picks it up)")
+    if len(text.encode()) > MAX_BYTES:
+        print(f"warning: {len(text.encode())} bytes is over the {MAX_BYTES} cap")
     return 0

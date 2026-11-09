@@ -15,5 +15,5 @@ ExecStart=-/usr/bin/python3 -m fm import trades
 ExecStart=/usr/bin/python3 -m fm prune
 ExecStart=/usr/bin/python3 -m fm report
 # "-": export tsm exits 3 while Wow.exe runs; export addon must still run to write its pending file
-ExecStart=-/usr/bin/python3 -m fm export tsm
+ExecStart=/usr/bin/python3 -m fm export tsm
 ExecStart=/usr/bin/python3 -m fm export addon

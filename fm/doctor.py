@@ -4,7 +4,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fm import blizzard, export_tsm, paths, tsm_patch
+from fm import addon_files, blizzard, paths, tsm_patch
 
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 TSM_API = Path(paths.CLIENT_DIR) / "Interface/AddOns/TradeSkillMaster/App/API.lua"
@@ -14,13 +14,6 @@ TIMERS = ("forever-market-sync.timer", "forever-market-regions.timer")
 
 def _lines():
     return []
-
-
-def _sv_dir():
-    try:
-        return export_tsm.target().parent
-    except SystemExit:
-        return None
 
 
 def _age_hours(path):
@@ -78,21 +71,15 @@ def checks(conn, offline=None):
     else:
         add("fail", "bridge addon", "not installed in Interface/AddOns")
 
-    sv = _sv_dir()
-    for name in ("ForeverMarketPrice.lua", "ForeverMarketData.lua"):
-        path = (sv / name) if sv else None
+    for addon, label in (("ForeverMarketUI", "addon data"), ("ForeverMarketBridge", "bridge data")):
+        path = addon_files.path(addon)
         age = _age_hours(path)
         if age is None:
-            add("fail", name, "missing")
+            add("fail", label, f"missing {path.name} in {addon}")
         elif age > 26:
-            add("warn", name, f"{age:.1f}h old")
+            add("warn", label, f"{age:.1f}h old, /reload shows stale numbers")
         else:
-            add("ok", name, f"{age:.1f}h old")
-    pending = (sv / "ForeverMarketData.pending.lua") if sv else None
-    if pending and pending.exists():
-        add("warn", "pending export", f"waiting, {_age_hours(pending):.1f}h old")
-    else:
-        add("ok", "pending export", "none")
+            add("ok", label, f"{age:.1f}h old")
 
     for timer in TIMERS:
         state = _systemctl("is-active", timer)
