@@ -9,6 +9,7 @@ WorkingDirectory=%h/Projects/forever-market
 # US only here: one house per pull, about 9 MB. Other regions run on the 6-hourly timer.
 ExecStart=/usr/bin/python3 -m fm sync prices
 ExecStart=/usr/bin/python3 -m fm sync api --regions us --house best
+ExecStart=/usr/bin/python3 -m fm prune
 ExecStart=/usr/bin/python3 -m fm report
 # "-": export tsm exits 3 while Wow.exe runs; export addon must still run to write its pending file
 ExecStart=-/usr/bin/python3 -m fm export tsm

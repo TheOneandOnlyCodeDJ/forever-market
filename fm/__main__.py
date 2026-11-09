@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from fm import blizzard, db, export_addon, export_tsm, history, import_loot, report, sync_items, sync_prices, sync_recipes
+from fm import blizzard, db, export_addon, export_tsm, history, import_loot, prune, report, sync_items, sync_prices, sync_recipes
 
 
 def main(argv=None):
@@ -29,6 +29,8 @@ def main(argv=None):
     export = sub.add_parser("export").add_subparsers(dest="what", required=True)
     export.add_parser("tsm")
     export.add_parser("addon")
+    pr = sub.add_parser("prune")
+    pr.add_argument("--dry-run", action="store_true", help="report what would be deleted, delete nothing")
     sub.add_parser("report")
     sub.add_parser("status")
     srv = sub.add_parser("serve")
@@ -85,6 +87,12 @@ def main(argv=None):
         else:
             sync_items.run(conn)
         return 0  # failures are printed and logged in sync_log; keep `&&` chains running
+    if args.cmd == "prune":
+        stats = prune.run(conn, dry_run=args.dry_run)
+        verb = "would delete" if args.dry_run else "deleted"
+        print(f"price_history: {stats['total']} rows, keep hourly {stats['hourly']}, "
+              f"keep daily {stats['daily']}, {verb} {stats['deleted']}")
+        return 0
     if args.cmd == "status":
         sources, counts = report.status(conn)
         for r in sources:
