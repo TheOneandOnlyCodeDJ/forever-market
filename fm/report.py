@@ -238,7 +238,9 @@ def pick_house(conn, env=None):
                         ORDER BY 1.0 * exact / common DESC, median_diff, house_id LIMIT 1""").fetchone()
     if r:
         return r[0], "api_house_match"
-    r = conn.execute("SELECT house_id FROM api_house WHERE auctions > 0 ORDER BY auctions DESC, house_id LIMIT 1").fetchone()
+    # any known house, even one whose last pull returned zero auctions
+    r = conn.execute("""SELECT house_id FROM api_house
+                        ORDER BY COALESCE(auctions, 0) DESC, house_id LIMIT 1""").fetchone()
     return (r[0], "most auctions") if r else (None, None)
 
 

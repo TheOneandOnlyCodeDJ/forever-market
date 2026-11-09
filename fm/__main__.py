@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from fm import blizzard, db, export_addon, export_tsm, history, import_loot, prune, report, sync_items, sync_prices, sync_recipes
+from fm import blizzard, db, doctor, export_addon, export_tsm, history, import_loot, prune, report, sync_items, sync_prices, sync_recipes, tsm_patch
 
 
 def main(argv=None):
@@ -31,6 +31,10 @@ def main(argv=None):
     export.add_parser("addon")
     pr = sub.add_parser("prune")
     pr.add_argument("--dry-run", action="store_true", help="report what would be deleted, delete nothing")
+    doc = sub.add_parser("doctor")
+    doc.add_argument("--offline", action="store_true", default=None, help="skip the token fetch")
+    pt = sub.add_parser("patch-tsm")
+    pt.add_argument("--check", action="store_true", help="report only, change nothing")
     sub.add_parser("report")
     sub.add_parser("status")
     srv = sub.add_parser("serve")
@@ -87,6 +91,10 @@ def main(argv=None):
         else:
             sync_items.run(conn)
         return 0  # failures are printed and logged in sync_log; keep `&&` chains running
+    if args.cmd == "patch-tsm":
+        return tsm_patch.run(write=not args.check)
+    if args.cmd == "doctor":
+        return doctor.run(conn, offline=args.offline)
     if args.cmd == "prune":
         stats = prune.run(conn, dry_run=args.dry_run)
         verb = "would delete" if args.dry_run else "deleted"

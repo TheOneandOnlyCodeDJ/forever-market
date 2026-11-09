@@ -71,13 +71,16 @@ def test_export_round_trip_cap_window_and_pending(conn, tmp_path, monkeypatch):
     out = lua_table.parse((tmp_path / SV / "ForeverMarketData.pending.lua").read_text())["ForeverMarketData"]
     assert (out["house"], out["region"]) == (113, "us")
     assert out["indices"] == {"Forever 100": [{"t": 1794178800, "v": 84.2}]}
-    assert len(out["items"]) == 2000 and "i:2000" in out["items"] and "i:2001" not in out["items"]
+    # coverage is capped by bytes now, not by item count: everything priced fits, and a
+    # low byte cap trims the cheapest items instead of truncating the list
+    assert "i:1" in out["items"] and out["items"]["i:1"]["res"] == "h"
+    assert len(out["items"]) == 2099
     item = out["items"]["i:1"]
     assert (item["n"], item["q"], item["il"], item["vendor"]) == ('Cerulean "Dye"', 1, 25, 7500)
     assert item["regions"] == {"us": 250, "eu": 200}
     assert len(item["series"]) == 168
     assert item["series"][-1] == {"t": 1794178800, "typical": 400, "cheapest": 250, "qty": 9, "auctions": 3}
-    assert out["items"]["i:2"] == {"series": {}}  # measured drop, no name or price known: nothing invented
+    assert out["items"]["i:2"] == {"res": "h", "series": {}}  # measured drop, no name or price known: nothing invented
 
 
 def test_pending_promoted_when_closed(conn, tmp_path, monkeypatch, capsys):
