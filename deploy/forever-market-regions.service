@@ -1,0 +1,11 @@
+[Unit]
+Description=forever-market regional sync (EU, KR, TW) every 6 hours
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/forever-market
+# Three regions, one house each: about 27 MB per run, four runs a day.
+ExecStart=/usr/bin/python3 -m fm sync api --regions eu,kr,tw --house best
+ExecStart=/usr/bin/python3 -m fm export addon
