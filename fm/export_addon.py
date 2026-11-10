@@ -9,7 +9,7 @@ ADDON = "ForeverMarketUI"
 MAX_POINTS = 168          # hourly points kept for tier 1 (one week)
 DAILY_POINTS = 90         # daily points kept for tier 2 (one quarter)
 TOP_API = 500             # tier 1 = this many items by cheapest listing
-MAX_BYTES = 3_000_000     # hard cap on the generated Lua
+MAX_BYTES = 3_500_000     # hard cap on the generated Lua
 
 
 def lua(v):
@@ -74,12 +74,20 @@ def build(conn, now=None):
     r = conn.execute("SELECT region FROM api_house WHERE house_id = ?", (house,)).fetchone()
     region = r[0] if r else "us"
     cheapest = _cheapest_by_region(conn, house, region)
+    # commodities live in their own table, and some items are only known from TSM: both must still
+    # reach the addon, otherwise half the trade goods are invisible in game
+    for item, unit in conn.execute("""SELECT item_id, MIN(unit_price) FROM api_commodity
+                                      WHERE unit_price > 0 GROUP BY item_id"""):
+        cheapest.setdefault(item, {})[region] = min(cheapest.get(item, {}).get(region, unit) or unit, unit)
+    for item, lo in conn.execute("""SELECT item_id, min_buyout FROM price_realm
+                                    WHERE min_buyout > 0 AND item_id NOT IN (SELECT item_id FROM api_commodity)"""):
+        cheapest.setdefault(item, {}).setdefault(region, lo)
     priced = sorted((i for i in cheapest if region in cheapest[i] and cheapest[i][region] > 0),
                     key=lambda i: (-cheapest[i][region], i))
     dropped = [r[0] for r in conn.execute(
         "SELECT DISTINCT item_id FROM loot_item_source WHERE item_id IS NOT NULL ORDER BY 1")]
     tier1 = priced[:TOP_API]
-    tier2 = [i for i in priced[TOP_API:] if i not in set(tier1)]
+    tier2 = [i for i in priced[TOP_API:]]
     # measured drops always ship, at hourly resolution, even when their price is unknown
     extras = [i for i in dropped if i not in set(tier1)]
 
@@ -105,15 +113,26 @@ def build(conn, now=None):
                        "sold": sold.get(i), "my": mine.get(i),
                        "series": [series[i][at] for at in sorted(series.get(i, {}))][-window:]})
 
-    items, size, skipped = {}, 200_000, 0
-    for i in tier1 + extras:
-        entry = make(i, tier1_series, "h", MAX_POINTS)
+    # every priced item ships: the expensive ones keep a full curve, the cheap ones lose it first
+    # rather than disappearing from the addon altogether
+    items, size, skipped, trimmed = {}, 200_000, 0, 0
+    priced_rank = {i: n for n, i in enumerate(priced, 1)}
+    for i in dict.fromkeys(tier1 + extras + tier2):
+        rank = priced_rank.get(i, 0)
+        if i in set(extras):  # measured drops always keep their hourly slice
+            series, res, window = tier1_series, "h", 48
+        elif rank and rank <= TOP_API:
+            series, res, window = tier1_series, "h", 48
+        elif tier2_daily:
+            series, res, window = tier2_series, "d", DAILY_POINTS
+        else:
+            series, res, window = tier2_series, "h", 6
+        entry = make(i, series, res, window)
         blob = len(lua(entry))
-        items[f"i:{i}"] = entry
-        size += blob
-    for i in tier2:  # cheapest first out of the file when over the cap
-        entry = make(i, tier2_series, "d" if tier2_daily else "h", DAILY_POINTS if tier2_daily else MAX_POINTS)
-        blob = len(lua(entry))
+        if size + blob > MAX_BYTES and window > 1:  # give up the curve, keep the price
+            entry = make(i, series, res, 1)
+            blob = len(lua(entry))
+            trimmed += 1
         if size + blob > MAX_BYTES:
             skipped += 1
             continue
@@ -129,8 +148,9 @@ def build(conn, now=None):
                    "next_update": int(stamp.timestamp()) + 3600,
                    "house": house, "region": region,
                    "indices": {c: p[-MAX_POINTS:] for c, p in indices.items()}, "items": items})
-    return data, {"tier1": len(tier1), "extras": len(extras), "tier2": len(items) - len(tier1) - len(extras),
-                  "skipped": skipped, "priced": len(priced)}
+    return data, {"tier1": len(tier1), "extras": len(extras),
+                  "tier2": len(items) - len([i for i in tier1 + extras if f"i:{i}" in items]),
+                  "skipped": skipped, "trimmed": trimmed, "priced": len(priced)}
 
 
 def to_lua(data):
@@ -145,8 +165,9 @@ def run(conn, client_dir=paths.CLIENT_DIR):
     text = to_lua(data)
     path = addon_files.write(addon_files.path(ADDON, client_dir=client_dir), text)
     points = sum(len(v["series"]) for v in data["items"].values())
-    print(f"items {len(data['items'])} (hourly {stats['tier1'] + stats['extras']}, daily {stats['tier2']}, "
-          f"skipped for size {stats['skipped']} of {stats['priced']} priced), series points {points}, "
+    print(f"items {len(data['items'])} of {stats['priced']} priced (full curve {stats['tier1'] + stats['extras']}, "
+          f"reduced {stats['tier2'] - stats['trimmed']}, price only {stats['trimmed']}, "
+          f"skipped {stats['skipped']}), series points {points}, "
           f"bytes {len(text.encode())} -> {path} (the game can be open; /reload picks it up)")
     if len(text.encode()) > MAX_BYTES:
         print(f"warning: {len(text.encode())} bytes is over the {MAX_BYTES} cap")

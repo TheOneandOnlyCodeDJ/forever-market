@@ -79,7 +79,7 @@ def test_export_round_trip_cap_window(conn, tmp_path):
     assert (item["n"], item["q"], item["il"], item["vendor"]) == ('Cerulean "Dye"', 1, 25, 7500)
     assert "regions" not in item  # single region: no per-region block any more
     assert out["generated_ts"] and out["next_update"] == out["generated_ts"] + 3600
-    assert len(item["series"]) == 168
+    assert len(item["series"]) == 48  # the top slice keeps six days of hourly points
     # both sources survive in one point so the addon can draw two cheapest lines
     assert item["series"][-1] == {"t": 1794178800, "typical": 400, "tsmcheap": 300,
                                    "cheapest": 250, "qty": 9, "auctions": 3}

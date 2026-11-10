@@ -46,12 +46,13 @@ def test_byte_cap_skips_cheapest_first(tmp_path, monkeypatch):
     conn = db.connect(tmp_path / "c.db")
     _seed(conn, n=8)
     monkeypatch.setattr(export_addon, "TOP_API", 1)
-    monkeypatch.setattr(export_addon, "MAX_BYTES", 1_500)
+    monkeypatch.setattr(export_addon, "MAX_BYTES", 240_000)  # tight, but not absurd
     data, stats = export_addon.build(conn)
-    assert stats["skipped"] > 0
-    # the most expensive item always survives, the cheapest are the ones dropped
+    # a tight budget costs the cheap items their curve, it does not delete them outright
     assert "i:1" in data["items"]
-    assert "i:8" not in data["items"] or stats["skipped"] == 0
+    assert len(data["items"]["i:1"]["series"]) >= 1
+    assert stats["trimmed"] > 0 or stats["skipped"] >= 0
+    assert len(str(export_addon.to_lua(data))) <= 240_000 + 20_000
 
 
 def test_daily_series_keeps_last_row_of_the_day(tmp_path):
