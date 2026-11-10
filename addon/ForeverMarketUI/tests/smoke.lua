@@ -135,17 +135,24 @@ eq(IV.regionRows[1].price:GetText(), "41 units", "estimated sold units")
 eq(IV.regionRows[2].price:GetText(), "7", "auctions that vanished")
 eq(IV.regionRows[3].price:GetText(), U.Money(1184000, true), "estimated copper moved")
 eq(IV.regionRows[4].name:GetText(), "Your sales", "own sales row label")
--- hover readout: put the cursor in the middle of the plot and run the OnUpdate
+-- dots and their readout: park the cursor on a marker and run the OnUpdate
 local plot = IV.chart.plot
-stub.cursorX, stub.cursorY = math.floor(IV.chart.plotW / 2), math.floor(IV.chart.plotH / 2)
+ok(#IV.chart.dots > 0, "a dot is drawn at each measured point")
+local d = IV.chart.dots[1]
+stub.cursorX, stub.cursorY = d.x, d.y
 plot.scripts.OnUpdate()
-ok(IV.chart.tip:IsShown(), "hover readout shows")
-ok(IV.chart.guide:IsShown(), "hover guide shows")
-ok(IV.chart.tipText:GetText():match("API") ~= nil and IV.chart.tipText:GetText():match("TSM") ~= nil,
-	"hover readout names both series")
-stub.cursorX, stub.cursorY = -50, -50
+ok(IV.chart.tip:IsShown(), "hover on a dot shows the readout")
+ok(IV.chart.tipText:GetText() == U.Money(d.v, true), "readout is only the price in coins")
+ok(not IV.chart.tipText:GetText():match("API") and not IV.chart.tipText:GetText():match("TSM"),
+	"readout carries no series name")
+ok(not IV.chart.guide:IsShown(), "no guide line on dot hover")
+stub.cursorX, stub.cursorY = math.floor(IV.chart.plotW / 2), math.floor(IV.chart.plotH - 3)
+local hit = false
+for _, q in ipairs(IV.chart.dots) do
+	if math.abs(q.x - stub.cursorX) < 6 and math.abs(q.y - stub.cursorY) < 6 then hit = true end
+end
 plot.scripts.OnUpdate()
-ok(not IV.chart.tip:IsShown(), "hover readout hides outside the plot")
+ok(hit or not IV.chart.tip:IsShown(), "off a dot there is no readout")
 ok(IV.similarRows[1]:IsShown() and not IV.similarRows[2]:IsShown(), "copes with one similar item")
 IV.add:Click()
 eq(IV.add.text:GetText(), "- Remove from chart", "add to chart toggles")

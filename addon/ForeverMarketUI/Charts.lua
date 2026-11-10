@@ -6,7 +6,7 @@ local Charts = {}
 ns.Charts = Charts
 
 local AXIS_W, AXIS_H = 64, 14
-local LAYER = { fill = "BACKGROUND", line = "ARTWORK" }
+local LAYER = { fill = "BACKGROUND", line = "ARTWORK", dot = "OVERLAY" }
 
 local function release(self)
 	for pool in pairs(LAYER) do
@@ -66,7 +66,7 @@ local Chart = {}
 Chart.__index = Chart
 
 function Charts.New(parent, w, h, fmtY)
-	local self = setmetatable({ fmtY = fmtY, fill = {}, line = {}, used = { fill = 0, line = 0 }, yl = {}, xl = {} }, Chart)
+	local self = setmetatable({ fmtY = fmtY, fill = {}, line = {}, dot = {}, used = { fill = 0, line = 0, dot = 0 }, yl = {}, xl = {}, dots = {} }, Chart)
 	self.plotW, self.plotH = w - AXIS_W, h - AXIS_H
 	self.frame = CreateFrame("Frame", nil, parent)
 	self.frame:SetSize(w, h)
@@ -104,18 +104,18 @@ function Chart:_Hover()
 	self.guide:SetPoint("TOP", self.plot, "TOP", 0, 0)
 	self.guide:Hide()
 	self.tip = CreateFrame("Frame", nil, self.frame)
-	self.tip:SetSize(150, 24)
+	self.tip:SetSize(110, 20)
 	self.tip:SetFrameStrata("TOOLTIP")
 	local bg = self.tip:CreateTexture(nil, "BACKGROUND")
 	bg:SetAllPoints()
 	U.Color(bg, C.panel, 0.95)
-	self.tipText = U.Text(self.tip, 11, C.body, "LEFT", 144)
+	self.tipText = U.Text(self.tip, 11, C.body, "LEFT", 104)
 	self.tipText:SetPoint("LEFT", 4, 0)
 	self.tip:Hide()
 	self.plot:EnableMouse(true)
 	self.plot:SetScript("OnUpdate", function()
-		local pts, t0, t1 = self.t0, self.hoverT0, self.hoverT1
-		if not pts or not t0 or t1 == t0 then return end
+		local t0, t1 = self.hoverT0, self.hoverT1
+		if not t0 or t1 == t0 then return end
 		local sx, sy = GetCursorPosition()
 		local scale = self.plot:GetEffectiveScale()
 		sx, sy = sx / scale, sy / scale
@@ -126,25 +126,22 @@ function Chart:_Hover()
 			if self.tip:IsShown() then self.tip:Hide() self.guide:Hide() end
 			return
 		end
-		local t = t0 + (t1 - t0) * x / (self.plotW - 1)
-		local lines = {}
-		for _, s in ipairs(pts) do
-			local best, bd
-			for _, p in ipairs(s.pts) do
-				local d = abs(p.t - t)
-				if not bd or d < bd then best, bd = p, d end
-			end
-			if best then lines[#lines + 1] = (s.label and s.label .. " " or "") .. self.fmtY(best.v) end
+		-- only a dot answers: the legend already says which line is which
+		local best, bd = nil, 8
+		for _, d in ipairs(self.dots or {}) do
+			local dist = math.sqrt((d.x - x) ^ 2 + (d.y - y) ^ 2)
+			if dist <= bd then best, bd = d, dist end
 		end
-		if #lines == 0 then return end
-		self.guide:ClearAllPoints()
-		self.guide:SetPoint("BOTTOMLEFT", floor(x), 0)
-		self.guide:SetHeight(self.plotH)
-		self.guide:Show()
-		self.tipText:SetText(date("%d %b %H:%M", t) .. ": " .. table.concat(lines, " · "))
+		if not best then
+			if self.tip:IsShown() then self.tip:Hide() self.guide:Hide() end
+			return
+		end
+		self.tipText:SetText(self.fmtY(best.v))
 		self.tip:ClearAllPoints()
-		self.tip:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", floor(min(x + 8, self.plotW - 150)), floor(min(y + 12, self.plotH)))
+		self.tip:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT",
+			floor(min(best.x + 8, self.plotW - 150)), floor(min(best.y + 10, self.plotH)))
 		self.tip:Show()
+		self.guide:Hide()
 	end)
 end
 
@@ -184,6 +181,22 @@ function Chart:Draw(series)
 			end
 		end
 	end
+	-- a dot at each measured point so the samples are visible, not just the line between them
+	self.dots = {}
+	for _, s in ipairs(series) do
+		local lastX
+		for _, p in ipairs(s.pts) do
+			local px = t1 > t0 and floor((p.t - t0) / (t1 - t0) * (w - 1) + 0.5) or 0
+			if not lastX or px - lastX >= 5 or p == s.pts[#s.pts] then
+				lastX = px
+				local py = (p.v - lo) * scale
+				local t = acquire(self, "dot", px - 1, max(0, py - 1), 3)
+				t:SetWidth(3)
+				U.Color(t, s.color, 1)
+				self.dots[#self.dots + 1] = { x = px, y = py, v = p.v }
+			end
+		end
+	end
 	for i, fs in ipairs(self.yl) do fs:SetText(self.fmtY(hi - (hi - lo) * (i - 1) / 3)) end
 	local fmt = t1 - t0 > 2 * 86400 and "%d %b" or "%H:%M"
 	self.xl[1]:SetText(t1 > t0 and date(fmt, t0) or "")
@@ -194,7 +207,7 @@ end
 
 -- Bar strip: one texture per point, scaled to the tallest. Returns the bar count.
 function Charts.Bars(parent, w, h)
-	local self = { line = {}, fill = {}, used = { fill = 0, line = 0 } }
+	local self = { line = {}, fill = {}, dot = {}, used = { fill = 0, line = 0, dot = 0 } }
 	self.plot = CreateFrame("Frame", nil, parent)
 	self.plot:SetSize(w, h)
 	self.frame = self.plot
