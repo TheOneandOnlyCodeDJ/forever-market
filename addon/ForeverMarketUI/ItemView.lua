@@ -91,14 +91,14 @@ function V.Build(parent)
 	V.ranges = U.RangeButtons(left, function() ns.Refresh() end)
 	V.ranges:SetPoint("TOPRIGHT", -10, -7)
 	local x = 10
-	for _, l in ipairs({ { "Typical price", C.green }, { "Cheapest listing", C.white } }) do
+	for _, l in ipairs({ { "Typical (TSM)", C.green }, { "Cheapest (API)", C.white }, { "Cheapest (TSM)", C.amber } }) do
 		local sw = U.Tex(left, "ARTWORK", l[2], 1)
 		sw:SetSize(10, 10)
 		sw:SetPoint("TOPLEFT", x, -34)
 		local fs = U.Text(left, 10, C.body)
 		fs:SetPoint("LEFT", sw, "RIGHT", 5, 0)
 		fs:SetText(l[1])
-		x = x + 110
+		x = x + 120
 	end
 	V.chart = Charts.New(left, 506, 214, function(v) return U.Money(v, true) end)
 	V.chart.frame:SetPoint("TOPLEFT", 10, -52)
@@ -117,9 +117,6 @@ function V.Build(parent)
 	local h3 = U.Text(right, 11, C.heading)
 	h3:SetPoint("TOPLEFT", 10, -10)
 	h3:SetText("ESTIMATED SALES")
-	V.noRegion = U.Text(right, 10, C.dim)
-	V.noRegion:SetPoint("TOPLEFT", 10, -34)
-	V.noRegion:SetText("No sales measured yet (first hour of tracking)")
 	V.regionRows = {}
 	for i = 1, 4 do
 		local r = U.Button(right, 242, 22, nil, function() end)
@@ -182,6 +179,7 @@ function V.Refresh()
 	V.counts = V.chart:Draw({
 		{ pts = typical, color = C.green, fill = true },
 		{ pts = U.Points(series, "cheapest"), color = C.white },
+		{ pts = U.Points(series, "tsmcheap"), color = C.amber },
 	})
 	V.bars:Draw(U.Points(series, "qty"))
 	local text, color = U.PctText(#typical > 0 and U.Pct(typical[#typical].v, typical[1].v) or nil)
@@ -209,7 +207,6 @@ function V.Refresh()
 		n = n + 1
 	end
 	for i = n + 1, #V.regionRows do V.regionRows[i]:Hide() end
-	U.Shown(V.noRegion, sold == nil and mine == nil)
 
 	local similar = V.Similar(V.key)
 	for i, row in ipairs(V.similarRows) do

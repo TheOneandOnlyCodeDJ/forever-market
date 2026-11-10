@@ -21,7 +21,8 @@ local T0 = 1794178800 - 23 * 3600
 local function series(base)
 	local s = {}
 	for i = 0, 23 do
-		s[#s + 1] = { t = T0 + i * 3600, typical = base + i * 100, cheapest = base - 500 + i * 50, qty = 100 + i, auctions = 10 + i }
+		s[#s + 1] = { t = T0 + i * 3600, typical = base + i * 100, cheapest = base - 500 + i * 50,
+			tsmcheap = base - 400 + i * 60, qty = 100 + i, auctions = 10 + i }
 	end
 	return s
 end
@@ -126,7 +127,7 @@ eq(IV.badge2.text:GetText(), "Item level 25", "item level badge")
 ok(IV.where:GetText():match("^Typical price · US · PvP · updated .+ ago · next ~.+$") ~= nil,
 	"header carries the update stamp")
 eq(IV.counts.fill, IV.chart.plotW, "item chart: fill strips for 24 points")
-eq(IV.counts.line, 2 * IV.chart.plotW, "item chart: typical and cheapest lines")
+eq(IV.counts.line, 3 * IV.chart.plotW, "item chart: typical, API cheapest and TSM cheapest lines")
 eq(IV.cards[2].value:GetText(), "33", "Auctions card")
 eq(IV.cards[3].value:GetText(), "123", "Items for sale card")
 eq(IV.regionRows[1].name:GetText(), "Sold (estimated)", "sales row 1 label")
@@ -139,7 +140,6 @@ IV.add:Click()
 eq(IV.add.text:GetText(), "- Remove from chart", "add to chart toggles")
 IV.similarRows[1]:Click()
 eq(IV.name:GetText(), "Crimson Dye", "clicking a similar row opens that item")
-ok(IV.noRegion:IsShown(), "item without sales data says so")
 ns.ShowItem("i:3")
 ok(IV.counts.line == 0 and IV.chart.none:IsShown(), "item with an empty series shows No data")
 ns.ShowIndex()

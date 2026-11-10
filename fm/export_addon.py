@@ -52,7 +52,7 @@ def _series(conn, ids, house, region, daily):
              WHERE region = ? AND ((source = 'tsm' AND house_id = ?) OR (source = 'api' AND house_id = ?))"""
     if daily:
         sql = f"""SELECT item_id, at, source, min_buyout, market, listings, qty FROM (
-                    SELECT *, ROW_NUMBER() OVER (PARTITION BY item_id, substr(at, 1, 10) ORDER BY at DESC) rn
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY item_id, substr(at, 1, 10), source ORDER BY at DESC) rn
                     FROM ({sql})) WHERE rn = 1"""
     conn.execute("CREATE TEMP TABLE IF NOT EXISTS export_ids (id INTEGER PRIMARY KEY)")
     conn.execute("DELETE FROM export_ids")
@@ -62,7 +62,10 @@ def _series(conn, ids, house, region, daily):
             sql + " ORDER BY item_id, at, source DESC", (region, history.TSM_HOUSE, house)
             if not daily else (region, history.TSM_HOUSE, house)):
         p = out.setdefault(item, {}).setdefault(at, {"t": _unix(at)})
-        p.update(_known({"typical": market, "cheapest": lo, "qty": qty, "auctions": listings}))
+        if source == "tsm":  # TSM knows a market value and its own min buyout, roughly every 3 hours
+            p.update(_known({"typical": market, "tsmcheap": lo}))
+        else:                # the API knows the live floor and how much is listed, hourly
+            p.update(_known({"cheapest": lo, "qty": qty, "auctions": listings}))
     return out
 
 

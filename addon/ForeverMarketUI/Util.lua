@@ -16,6 +16,7 @@ local C = {
 	body = hex("#d9d9d9"),
 	green = hex("#4caf50"),
 	white = hex("#ffffff"),
+	amber = hex("#e69f3c"),
 	red = hex("#e05a4f"),
 	dim = hex("#8a8a8a"),
 	panel = hex("#1e1e1e", 0.9),

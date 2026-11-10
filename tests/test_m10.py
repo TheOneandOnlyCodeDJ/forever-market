@@ -80,7 +80,9 @@ def test_export_round_trip_cap_window(conn, tmp_path):
     assert "regions" not in item  # single region: no per-region block any more
     assert out["generated_ts"] and out["next_update"] == out["generated_ts"] + 3600
     assert len(item["series"]) == 168
-    assert item["series"][-1] == {"t": 1794178800, "typical": 400, "cheapest": 250, "qty": 9, "auctions": 3}
+    # both sources survive in one point so the addon can draw two cheapest lines
+    assert item["series"][-1] == {"t": 1794178800, "typical": 400, "tsmcheap": 300,
+                                   "cheapest": 250, "qty": 9, "auctions": 3}
     assert out["items"]["i:2"] == {"res": "h", "series": {}}  # measured drop, no name or price known: nothing invented
 
 
