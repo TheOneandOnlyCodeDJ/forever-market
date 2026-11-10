@@ -32,11 +32,12 @@ local function index(first, last)
 end
 local function sample()
 	return {
-		generated = "2026-11-10T06:00:00Z", house = 113, region = "us",
+		generated = "2026-11-10T06:00:00Z", generated_ts = 1794175200, next_update = 1794178800,
+		house = 113, region = "us",
 		indices = { ["Trade goods"] = index(100, 68), ["Forever 100"] = index(100, 110) },
 		items = {
 			["i:1"] = { n = "Cerulean Dye", q = 2, il = 25, vendor = 7500, c = 7, s = 5, series = series(381800),
-				regions = { us = 293600, eu = 301800, kr = 352300, tw = 440400 } },
+				sold = { q = 41, n = 7, t = 1184000 }, my = { n = 3, u = 95000 } },
 			["i:2"] = { n = "Crimson Dye", q = 1, il = 20, vendor = 29, c = 7, s = 5, series = series(200000) },
 			["i:3"] = { n = "Copper Sword", c = 2, s = 7, series = {} },
 		},
@@ -122,22 +123,23 @@ eq(ForeverMarketUISettings.item, "i:1", "last selected item is saved")
 eq(IV.name:GetText(), "Cerulean Dye", "item name")
 eq(IV.badge1.text:GetText(), "Trade good", "class badge")
 eq(IV.badge2.text:GetText(), "Item level 25", "item level badge")
-eq(IV.where:GetText(), "Typical price · US · PvP", "price caption")
+ok(IV.where:GetText():match("^Typical price · US · PvP · updated .+ ago · next ~.+$") ~= nil,
+	"header carries the update stamp")
 eq(IV.counts.fill, IV.chart.plotW, "item chart: fill strips for 24 points")
 eq(IV.counts.line, 2 * IV.chart.plotW, "item chart: typical and cheapest lines")
 eq(IV.cards[2].value:GetText(), "33", "Auctions card")
 eq(IV.cards[3].value:GetText(), "123", "Items for sale card")
-eq(IV.regionRows[1].diff:GetText(), "cheapest", "cheapest region is marked")
-ok(IV.regionRows[1].hl:IsShown() and not IV.regionRows[2].hl:IsShown(), "only the cheapest region is highlighted")
-eq(IV.regionRows[4].diff:GetText(), "+50.0% vs cheapest", "region premium")
-IV.regionRows[2]:Click()
-eq(IV.cards[1].title:GetText(), "Cheapest now · EU", "clicking a region row shows that region's cheapest")
+eq(IV.regionRows[1].name:GetText(), "Sold (estimated)", "sales row 1 label")
+eq(IV.regionRows[1].price:GetText(), "41 units", "estimated sold units")
+eq(IV.regionRows[2].price:GetText(), "7", "auctions that vanished")
+eq(IV.regionRows[3].price:GetText(), U.Money(1184000, true), "estimated copper moved")
+eq(IV.regionRows[4].name:GetText(), "Your sales", "own sales row label")
 ok(IV.similarRows[1]:IsShown() and not IV.similarRows[2]:IsShown(), "copes with one similar item")
 IV.add:Click()
 eq(IV.add.text:GetText(), "- Remove from chart", "add to chart toggles")
 IV.similarRows[1]:Click()
 eq(IV.name:GetText(), "Crimson Dye", "clicking a similar row opens that item")
-ok(IV.noRegion:IsShown(), "item without regions says so")
+ok(IV.noRegion:IsShown(), "item without sales data says so")
 ns.ShowItem("i:3")
 ok(IV.counts.line == 0 and IV.chart.none:IsShown(), "item with an empty series shows No data")
 ns.ShowIndex()

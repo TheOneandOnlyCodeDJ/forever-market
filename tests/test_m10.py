@@ -77,7 +77,8 @@ def test_export_round_trip_cap_window(conn, tmp_path):
     assert len(out["items"]) == 2099
     item = out["items"]["i:1"]
     assert (item["n"], item["q"], item["il"], item["vendor"]) == ('Cerulean "Dye"', 1, 25, 7500)
-    assert item["regions"] == {"us": 250, "eu": 200}
+    assert "regions" not in item  # single region: no per-region block any more
+    assert out["generated_ts"] and out["next_update"] == out["generated_ts"] + 3600
     assert len(item["series"]) == 168
     assert item["series"][-1] == {"t": 1794178800, "typical": 400, "cheapest": 250, "qty": 9, "auctions": 3}
     assert out["items"]["i:2"] == {"res": "h", "series": {}}  # measured drop, no name or price known: nothing invented

@@ -1,5 +1,6 @@
+# Manual use only: the player is on one region, so this is not scheduled any more.
 [Unit]
-Description=forever-market regional sync (EU, KR, TW) every 6 hours
+Description=forever-market regional sync (EU, KR, TW), manual
 After=network-online.target
 Wants=network-online.target
 

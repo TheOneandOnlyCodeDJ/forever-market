@@ -64,6 +64,16 @@ function U.PctText(p)
 	return string.format("%+.1f%%", p), p > 0 and C.green or p < 0 and C.red or C.body
 end
 
+function U.Dur(seconds)
+	if type(seconds) ~= "number" then return "?" end
+	local m = math.floor(seconds / 60)
+	if m < 1 then return "<1m" end
+	if m < 60 then return m .. "m" end
+	local h = math.floor(m / 60)
+	return h .. "h" .. (m % 60 > 0 and string.format("%02d", m % 60) or "")
+end
+
+
 function U.Num(v)
 	return type(v) == "number" and tostring(v) or "-"
 end

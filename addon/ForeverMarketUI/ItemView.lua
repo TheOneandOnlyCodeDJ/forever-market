@@ -1,4 +1,4 @@
--- Item view: header, four stat cards, price history, region prices, similar items.
+-- Item view: header, four stat cards, price history, estimated sales, similar items.
 local ADDON, ns = ...
 local U, C, Charts = ns.U, ns.C, ns.Charts
 local abs = math.abs
@@ -116,13 +116,13 @@ function V.Build(parent)
 	right:SetPoint("TOPRIGHT", 0, -158)
 	local h3 = U.Text(right, 11, C.heading)
 	h3:SetPoint("TOPLEFT", 10, -10)
-	h3:SetText("PRICE IN EACH REGION")
+	h3:SetText("ESTIMATED SALES")
 	V.noRegion = U.Text(right, 10, C.dim)
 	V.noRegion:SetPoint("TOPLEFT", 10, -34)
-	V.noRegion:SetText("No regional prices in the export")
+	V.noRegion:SetText("No sales measured yet (first hour of tracking)")
 	V.regionRows = {}
-	for i = 1, #REGIONS do
-		local r = U.Button(right, 242, 22, nil, function(self) ns.ShowItem(V.key, self.region) end)
+	for i = 1, 4 do
+		local r = U.Button(right, 242, 22, nil, function() end)
 		r:SetPoint("TOPLEFT", 10, -30 - (i - 1) * 24)
 		r.name = U.Text(r, 11, C.heading)
 		r.name:SetPoint("LEFT", 4, 0)
@@ -164,14 +164,16 @@ function V.Refresh()
 	V.badge1.text:SetText(CLASS[item.c] or "Other")
 	U.Shown(V.badge2, item.il ~= nil)
 	V.badge2.text:SetText("Item level " .. tostring(item.il))
-	V.where:SetText("Typical price · " .. tostring(d.region or "?"):upper() .. " · " .. ns.REALM)
+	local age = d.generated_ts and (time() - d.generated_ts) or nil
+	local due = d.next_update and math.max(0, d.next_update - time()) or nil
+	local stamp = age and string.format(" · updated %s ago · next ~%s", U.Dur(age), U.Dur(due)) or ""
+	if not age then stamp = "" end
+	V.where:SetText("Typical price · " .. tostring(d.region or "?"):upper() .. " · " .. ns.REALM .. stamp)
 	V.price:SetText(U.Money(U.Last(item.series, "typical"), true))
 	V.add.text:SetText(ns.IndexView.IsCharted(V.key) and "- Remove from chart" or "+ Add to chart")
 
-	local regions = type(item.regions) == "table" and item.regions or {}
-	local picked = V.region and type(regions[V.region]) == "number" and V.region
-	V.cards[1].title:SetText(CARDS[1] .. (picked and " · " .. picked:upper() or ""))
-	V.cards[1].value:SetText(U.Money(picked and regions[picked] or U.Last(item.series, "cheapest"), true))
+	V.cards[1].title:SetText(CARDS[1])
+	V.cards[1].value:SetText(U.Money(U.Last(item.series, "cheapest"), true))
 	V.cards[2].value:SetText(U.Num(U.Last(item.series, "auctions")))
 	V.cards[3].value:SetText(U.Num(U.Last(item.series, "qty")))
 	V.cards[4].value:SetText(U.Money(item.vendor, true))
@@ -188,26 +190,26 @@ function V.Refresh()
 	V.footPct:SetTextColor(color[1], color[2], color[3])
 	V.ranges.Refresh()
 
-	local lowest, n = nil, 0
-	for _, r in ipairs(REGIONS) do
-		if type(regions[r]) == "number" then lowest = math.min(lowest or regions[r], regions[r]) end
-	end
-	for _, r in ipairs(REGIONS) do
-		local v = regions[r]
-		if type(v) == "number" then
-			n = n + 1
-			local row = V.regionRows[n]
-			row.region = r
-			row.name:SetText(r:upper())
-			local p = U.Pct(v, lowest)
-			row.diff:SetText(v == lowest and "cheapest" or p and string.format("+%.1f%% vs cheapest", p) or "-")
-			row.price:SetText(U.Money(v, true))
-			U.Shown(row.hl, v == lowest)
-			row:Show()
-		end
+	-- estimated sales: vanished auctions that could not have expired, plus his own TSM sales
+	local sold = type(item.sold) == "table" and item.sold or nil
+	local mine = type(item.my) == "table" and item.my or nil
+	local lines = {
+		{ "Sold (estimated)", sold and (U.Num(sold.q) .. " units") or "-" },
+		{ "Auctions gone", sold and U.Num(sold.n) or "-" },
+		{ "Copper moved (est.)", sold and U.Money(sold.t, true) or "-" },
+		{ "Your sales", mine and (U.Num(mine.n) .. " @ " .. U.Money(mine.u, true)) or "-" },
+	}
+	local n = 0
+	for i, line in ipairs(lines) do
+		local row = V.regionRows[i]
+		row.name:SetText(line[1])
+		row.diff:SetText("")
+		row.price:SetText(line[2])
+		row:Show()
+		n = n + 1
 	end
 	for i = n + 1, #V.regionRows do V.regionRows[i]:Hide() end
-	U.Shown(V.noRegion, n == 0)
+	U.Shown(V.noRegion, sold == nil and mine == nil)
 
 	local similar = V.Similar(V.key)
 	for i, row in ipairs(V.similarRows) do

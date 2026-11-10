@@ -83,13 +83,19 @@ def build(conn, now=None):
     tier1_series = _series(conn, tier1 + extras, house, region, daily=False)
     tier2_series = _series(conn, tier2, house, region, daily=True)
 
+    sold = {r["item_id"]: {"q": r["q"], "n": r["n"], "t": r["t"]} for r in conn.execute(
+        """SELECT item_id, SUM(quantity) AS q, COUNT(*) AS n, SUM(buyout) AS t
+           FROM auction_life WHERE sold = 1 GROUP BY item_id""")}
+    mine = {r["item_id"]: {"n": r["n"], "u": r["u"]} for r in conn.execute(
+        """SELECT item_id, COUNT(*) AS n, CAST(AVG(unit) AS INTEGER) AS u
+           FROM trade WHERE kind = 'sale' GROUP BY item_id""")}
     meta = {r[0]: r[1:] for r in conn.execute(
         "SELECT id, name, quality, item_level, vendor_sell, class_id, sub_class FROM item")}
 
     def make(i, series, res, window):
         n, q, il, vendor, c, s = meta.get(i, (None,) * 6)
         return _known({"n": n, "q": q, "il": il, "vendor": vendor, "c": c, "s": s, "res": res,
-                       "regions": cheapest.get(i),
+                       "sold": sold.get(i), "my": mine.get(i),
                        "series": [series[i][at] for at in sorted(series.get(i, {}))][-window:]})
 
     items, size, skipped = {}, 200_000, 0
@@ -110,7 +116,10 @@ def build(conn, now=None):
     indices = {}
     for at, cat, v in conn.execute("SELECT at, category, index_value FROM index_history ORDER BY category, at"):
         indices.setdefault(cat, []).append({"t": _unix(at), "v": v})
-    data = _known({"generated": (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    stamp = now or datetime.now(timezone.utc)
+    data = _known({"generated": stamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                   "generated_ts": int(stamp.timestamp()),
+                   "next_update": int(stamp.timestamp()) + 3600,
                    "house": house, "region": region,
                    "indices": {c: p[-MAX_POINTS:] for c, p in indices.items()}, "items": items})
     return data, {"tier1": len(tier1), "extras": len(extras), "tier2": len(items) - len(tier1) - len(extras),
