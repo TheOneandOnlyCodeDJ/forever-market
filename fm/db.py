@@ -13,6 +13,8 @@ def connect(path=DB_PATH):
     conn.executescript(SCHEMA.read_text())
     if "region" not in [r[1] for r in conn.execute("PRAGMA table_info(api_house)")]:
         conn.execute("ALTER TABLE api_house ADD COLUMN region TEXT DEFAULT 'us'")  # the default backfills
+    if "kind" not in [r[1] for r in conn.execute("PRAGMA table_info(auction_life)")]:
+        conn.execute("ALTER TABLE auction_life ADD COLUMN kind TEXT DEFAULT 'auction'")
     return conn
 
 

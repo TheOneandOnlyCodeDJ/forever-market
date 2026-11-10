@@ -118,6 +118,14 @@ def auction_rows(house_id, payload, captured_at):
             for a in payload.get("auctions") or [] if a.get("id") is not None]
 
 
+def commodity_id_rows(house_id, entries, captured_at):
+    """Same shape as auction_rows but for commodities: buyout is the stack's value at unit_price."""
+    return [(house_id, c.get("id"), (c.get("item") or {}).get("id"), c.get("quantity"),
+             (c.get("unit_price") or 0) * (c.get("quantity") or 0), None, c.get("unit_price"),
+             c.get("time_left"), captured_at)
+            for c in entries or [] if c.get("id") is not None]
+
+
 def commodity_rows(house_id, entries, captured_at):
     return [(house_id, (c.get("item") or {}).get("id"), c.get("quantity"), c.get("unit_price"), captured_at)
             for c in entries or []]
@@ -263,6 +271,8 @@ def sync(conn, ruleset=1, which="horde", region=None, get=get, house=None, skip_
             auctions, comm_rows = auction_rows(hid, payload, now), commodity_rows(hid, comm, now)
         if region == home:
             life = auction_life.track(conn, hid, auctions)
+            clife = auction_life.track(conn, hid, commodity_id_rows(hid, comm, now), kind="commodity")
+            life = {k: life.get(k, 0) + clife.get(k, 0) for k in set(life) | set(clife)}
             life_totals = {k: life_totals.get(k, 0) + v for k, v in life.items()}
         history.append(conn, history.hour(), "api", region, hid, history.api_rows(auctions, comm_rows))
         n_auctions += len(auctions)

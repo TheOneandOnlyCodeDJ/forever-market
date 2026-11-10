@@ -17,7 +17,7 @@ def _ts(now):
     return now.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def track(conn, house_id, auctions, now=None):
+def track(conn, house_id, auctions, now=None, kind="auction"):
     """auctions: [(house, auction_id, item_id, quantity, buyout, bid, unit_price, time_left, at)].
 
     Returns {"new", "seen", "gone", "sold"} counts for this house.
@@ -28,7 +28,8 @@ def track(conn, house_id, auctions, now=None):
     live_ids = {a[1] for a in rows}
 
     existing = {r["auction_id"]: r for r in conn.execute(
-        "SELECT auction_id, last_seen, time_left, gone_at FROM auction_life WHERE house_id = ?", (house_id,))}
+        "SELECT auction_id, last_seen, time_left, gone_at FROM auction_life WHERE house_id = ? AND kind = ?",
+        (house_id, kind))}
 
     new = seen = 0
     for _, aid, item_id, quantity, buyout, _bid, _unit, time_left, _at in rows:
@@ -36,13 +37,13 @@ def track(conn, house_id, auctions, now=None):
         if prev is None:
             conn.execute(
                 "INSERT OR IGNORE INTO auction_life (house_id, auction_id, item_id, quantity, buyout, time_left,"
-                " first_seen, last_seen, gone_at, sold) VALUES (?,?,?,?,?,?,?,?,NULL,0)",
-                (house_id, aid, item_id, quantity, buyout, time_left, stamp, stamp))
+                " first_seen, last_seen, gone_at, sold, kind) VALUES (?,?,?,?,?,?,?,?,NULL,0,?)",
+                (house_id, aid, item_id, quantity, buyout, time_left, stamp, stamp, kind))
             new += 1
         elif prev["gone_at"] is None:
             conn.execute(
-                "UPDATE auction_life SET last_seen = ?, time_left = ? WHERE house_id = ? AND auction_id = ?",
-                (stamp, time_left, house_id, aid))
+                "UPDATE auction_life SET last_seen = ?, time_left = ? WHERE house_id = ? AND auction_id = ? AND kind = ?",
+                (stamp, time_left, house_id, aid, kind))
             seen += 1
 
     gone = sold = 0
@@ -57,8 +58,8 @@ def track(conn, house_id, auctions, now=None):
         remaining = BUCKET_MIN.get((prev["time_left"] or "").upper(), 0)
         likely_sold = 1 if remaining > elapsed_min * 1.1 else 0
         conn.execute(
-            "UPDATE auction_life SET gone_at = ?, sold = ? WHERE house_id = ? AND auction_id = ?",
-            (stamp, likely_sold, house_id, aid))
+            "UPDATE auction_life SET gone_at = ?, sold = ? WHERE house_id = ? AND auction_id = ? AND kind = ?",
+            (stamp, likely_sold, house_id, aid, kind))
         gone += 1
         sold += likely_sold
     return {"new": new, "seen": seen, "gone": gone, "sold": sold}

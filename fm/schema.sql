@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS index_history (at TEXT, category TEXT, index_value RE
 CREATE TABLE IF NOT EXISTS auction_life (
   house_id INTEGER, auction_id INTEGER, item_id INTEGER, quantity INTEGER, buyout INTEGER,
   time_left TEXT, first_seen TEXT, last_seen TEXT, gone_at TEXT, sold INTEGER,
+  kind TEXT DEFAULT 'auction',
   PRIMARY KEY (house_id, auction_id)
 );
 CREATE INDEX IF NOT EXISTS idx_auction_life_item ON auction_life (item_id, gone_at);
