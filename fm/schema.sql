@@ -71,3 +71,8 @@ CREATE TABLE IF NOT EXISTS trade (
   PRIMARY KEY (at, kind, item_id, qty, total, player)
 );
 CREATE INDEX IF NOT EXISTS idx_trade_item ON trade (item_id, kind);
+-- Fingerprint of the live auction payload per poll, to discover when Blizzard actually refreshes.
+CREATE TABLE IF NOT EXISTS api_fingerprint (
+  at TEXT, house_id INTEGER, sha TEXT, auctions INTEGER, commodities INTEGER,
+  PRIMARY KEY (at, house_id)
+);

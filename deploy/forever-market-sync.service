@@ -8,7 +8,8 @@ Type=oneshot
 WorkingDirectory=%h/Projects/forever-market
 # US only here: one house per pull, about 9 MB. Other regions run on the 6-hourly timer.
 ExecStart=/usr/bin/python3 -m fm sync prices
-ExecStart=/usr/bin/python3 -m fm sync api --regions us --house best
+# the API snapshot refreshes roughly :12 past the hour (measured 2026-11-10), so poll after it
+ExecStart=/usr/bin/python3 -m fm sync api --regions us --house best --skip-unchanged
 # a TSM update wipes our two local patches; repair them every hour before exporting
 ExecStart=-/usr/bin/python3 -m fm patch-tsm
 ExecStart=-/usr/bin/python3 -m fm import trades

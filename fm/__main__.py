@@ -16,6 +16,8 @@ def main(argv=None):
     sync_api.add_argument("--house", type=lambda v: v if v == "best" else int(v),
                           help="sync only this house id; `best` = the matched (else largest) house")
     sync_api.add_argument("--regions", help="comma-separated, e.g. us,eu,kr,tw; overrides --region")
+    sync_api.add_argument("--skip-unchanged", action="store_true",
+                          help="do nothing when the payload is identical to the last poll")
     sync.add_parser("items")
     sync.add_parser("recipes")
     imp = sub.add_parser("import").add_subparsers(dest="what", required=True)
@@ -24,6 +26,13 @@ def main(argv=None):
     api_cmd = sub.add_parser("api").add_subparsers(dest="what", required=True)
     probe = api_cmd.add_parser("probe")
     api_cmd.add_parser("match")
+    watch = api_cmd.add_parser("watch")
+    watch.add_argument("--minutes", type=float, default=60)
+    watch.add_argument("--interval", type=int, default=180, help="seconds between polls")
+    watch.add_argument("--house", type=int)
+    for ap in (watch,):
+        ap.add_argument("--ruleset", type=int, default=1)
+        ap.add_argument("--region", choices=blizzard.REGIONS)
     for ap in (probe, sync_api):
         ap.add_argument("--ruleset", type=int, default=1)
         ap.add_argument("--region", choices=blizzard.REGIONS, help="default BLIZZARD_REGION or us")
@@ -47,6 +56,9 @@ def main(argv=None):
         from fm import web
         web.serve(args.host, args.port)
         return 0
+    if args.cmd == "api" and args.what == "watch":
+        return blizzard.watch(db.connect(), house=args.house, ruleset=args.ruleset,
+                              region=args.region, interval=args.interval, minutes=args.minutes)
     if args.cmd == "api" and args.what == "match":
         blizzard.print_match(blizzard.match(db.connect()))
         return 0
@@ -61,7 +73,8 @@ def main(argv=None):
                 failed = 0
                 for region in args.regions.split(",") if args.regions else [args.region]:
                     try:  # one region down must not cost the others their snapshot
-                        blizzard.sync(conn, args.ruleset, args.houses, region, house=house)
+                        blizzard.sync(conn, args.ruleset, args.houses, region, house=house,
+                                      skip_unchanged=args.skip_unchanged)
                     except (blizzard.BlizzardError, OSError) as e:
                         failed += 1
                         print(f"{region}: FAILED: {e}")

@@ -188,7 +188,41 @@ def home_region():
         return "us"
 
 
-def sync(conn, ruleset=1, which="horde", region=None, get=get, house=None):
+def watch(conn, house=None, ruleset=1, region=None, interval=180, minutes=60, get=get, sleep=time.sleep):
+    """Poll one house and record a payload fingerprint each time, so refresh time can be measured."""
+    import hashlib
+    region = region or home_region()
+    if house is None:
+        from fm import report
+        house = report.pick_house(conn)[0]
+    if house is None:
+        print("no house to watch")
+        return 1
+    end = time.time() + minutes * 60
+    prev = None
+    polls = 0
+    while time.time() < end:
+        payload = get(house_path(ruleset, house), region=region)
+        auctions = payload.get("auctions") or []
+        sha = hashlib.sha1(",".join(str(a.get("id")) for a in sorted(
+            auctions, key=lambda a: a.get("id") or 0)).encode()).hexdigest()[:16]
+        at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("INSERT OR REPLACE INTO api_fingerprint VALUES (?,?,?,?,?)",
+                     (at, house, sha, len(auctions), len(payload.get("commodities") or [])))
+        conn.commit()
+        changed = prev is not None and sha != prev
+        polls += 1
+        print(f"{at} house {house}: {len(auctions)} auctions sha {sha}"
+              + ("  CHANGED" if changed else ""), flush=True)
+        prev = sha
+        if time.time() + interval >= end:
+            break
+        sleep(interval)
+    print(f"watch done: {polls} polls over {minutes} min")
+    return 0
+
+
+def sync(conn, ruleset=1, which="horde", region=None, get=get, house=None, skip_unchanged=False):
     """Every fetched house gets a price_history snapshot. Only the home region lands in the api_* tables:
     house ids repeat across regions, so a foreign house would overwrite the home one."""
     home = home_region()
@@ -203,6 +237,20 @@ def sync(conn, ruleset=1, which="horde", region=None, get=get, house=None):
     life_totals = {}
     for hid, name in kept:
         payload = get(house_path(ruleset, hid), region=region)
+        if skip_unchanged:
+            import hashlib
+            sha = hashlib.sha1(",".join(str(a.get("id")) for a in sorted(
+                payload.get("auctions") or [], key=lambda a: a.get("id") or 0)).encode()).hexdigest()[:16]
+            last = conn.execute("SELECT sha FROM api_fingerprint WHERE house_id = ? ORDER BY at DESC LIMIT 1",
+                                (hid,)).fetchone()
+            now_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute("INSERT OR REPLACE INTO api_fingerprint VALUES (?,?,?,?,?)",
+                         (now_stamp, hid, sha, len(payload.get("auctions") or []),
+                          len(payload.get("commodities") or [])))
+            conn.commit()
+            if last and last[0] == sha:
+                print(f"house {hid}: payload unchanged since the last poll ({sha}), nothing written")
+                continue
         try:
             comm = get(house_path(ruleset, hid, commodities=True), region=region).get("auctions")
         except BlizzardError as e:
