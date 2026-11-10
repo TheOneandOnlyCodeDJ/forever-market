@@ -23,9 +23,23 @@ def test_tiering_marks_hourly_and_daily(tmp_path, monkeypatch):
     data, stats = export_addon.build(conn)
     assert stats["tier1"] == 2 and stats["tier2"] == 3
     res = {k: v.get("res") for k, v in data["items"].items()}
-    # the two most expensive are hourly, the rest are daily
-    assert res["i:1"] == "h" and res["i:2"] == "h"
-    assert res["i:3"] == "d" and res["i:5"] == "d"
+    # with only a handful of hours of history every series stays hourly, including tier 2:
+    # daily downsampling would flatten a two point series into a straight line
+    assert res["i:1"] == "h" and res["i:2"] == "h" and res["i:5"] == "h"
+
+
+def test_tier2_goes_daily_once_history_is_long(tmp_path, monkeypatch):
+    conn = db.connect(tmp_path / "c.db")
+    _seed(conn)
+    # a week of hourly snapshots is more than the addon plots, so tier 2 downsamples
+    for h in range(200):
+        conn.execute("INSERT INTO price_history (at, source, region, house_id, item_id, min_buyout, market, listings, qty)"
+                     " VALUES (?, 'api', 'us', 113, 1, 1000, 1000, 1, 1)",
+                     (f"2026-10-{1 + h // 24:02d}T{h % 24:02d}:00:00Z",))
+    conn.commit()
+    monkeypatch.setattr(export_addon, "TOP_API", 2)
+    data, stats = export_addon.build(conn)
+    assert data["items"]["i:3"]["res"] == "d"
 
 
 def test_byte_cap_skips_cheapest_first(tmp_path, monkeypatch):
