@@ -28,6 +28,10 @@ function Widget:GetHeight() return self.h or 0 end
 function Widget:SetTexture(path) self.texture = path end
 function Widget:GetTexture() return self.texture end
 function Widget:GetPoint() return "CENTER", UIParent, "CENTER", 0, 0 end
+function Widget:GetLeft() return 0 end
+function Widget:GetBottom() return 0 end
+function Widget:GetEffectiveScale() return 1 end
+function Widget:EnableMouse() end
 function Widget:GetText() return self.text end
 function Widget:SetText(text)
 	self.text = text
@@ -53,6 +57,7 @@ GetTime = os.clock
 time, date = os.time, os.date
 format, floor = string.format, math.floor
 tinsert = table.insert
+function GetCursorPosition() return stub.cursorX or 0, stub.cursorY or 0 end
 function IsShiftKeyDown() return stub.shift end
 
 -- Loads the files the toc lists, each called as (addonName, namespace) like the client does.

@@ -182,7 +182,7 @@ function V.Refresh()
 		local c = C.dim
 		if e.drawn then
 			c = C.lines[#lines % #C.lines + 1]
-			lines[#lines + 1] = { pts = pts, color = c }
+			lines[#lines + 1] = { pts = pts, color = c, label = e.label }
 		end
 		U.Color(r.swatch, c, 1)
 		r:Show()

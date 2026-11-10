@@ -91,10 +91,64 @@ function Charts.New(parent, w, h, fmtY)
 	self.none = U.Text(self.plot, 12, C.dim, "CENTER")
 	self.none:SetPoint("CENTER")
 	self.none:SetText("No data")
+	self:_Hover()
 	return self
 end
 
--- series: list of { pts = { {t=, v=}, ... }, color = {r,g,b}, fill = bool }.
+-- Cursor readout: a vertical guide and the values of the nearest point of every series.
+function Chart:_Hover()
+	if not GetCursorPosition then return end
+	self.guide = U.Tex(self.plot, "OVERLAY", C.white, 0.35)
+	self.guide:SetWidth(1)
+	self.guide:SetPoint("BOTTOMLEFT", 0, 0)
+	self.guide:SetPoint("TOP", self.plot, "TOP", 0, 0)
+	self.guide:Hide()
+	self.tip = CreateFrame("Frame", nil, self.frame)
+	self.tip:SetSize(150, 24)
+	self.tip:SetFrameStrata("TOOLTIP")
+	local bg = self.tip:CreateTexture(nil, "BACKGROUND")
+	bg:SetAllPoints()
+	U.Color(bg, C.panel, 0.95)
+	self.tipText = U.Text(self.tip, 11, C.body, "LEFT", 144)
+	self.tipText:SetPoint("LEFT", 4, 0)
+	self.tip:Hide()
+	self.plot:EnableMouse(true)
+	self.plot:SetScript("OnUpdate", function()
+		local pts, t0, t1 = self.t0, self.hoverT0, self.hoverT1
+		if not pts or not t0 or t1 == t0 then return end
+		local sx, sy = GetCursorPosition()
+		local scale = self.plot:GetEffectiveScale()
+		sx, sy = sx / scale, sy / scale
+		local left, bottom = self.plot:GetLeft(), self.plot:GetBottom()
+		if not left then return end
+		local x, y = sx - left, sy - bottom
+		if x < 0 or x > self.plotW - 1 or y < 0 or y > self.plotH then
+			if self.tip:IsShown() then self.tip:Hide() self.guide:Hide() end
+			return
+		end
+		local t = t0 + (t1 - t0) * x / (self.plotW - 1)
+		local lines = {}
+		for _, s in ipairs(pts) do
+			local best, bd
+			for _, p in ipairs(s.pts) do
+				local d = abs(p.t - t)
+				if not bd or d < bd then best, bd = p, d end
+			end
+			if best then lines[#lines + 1] = (s.label and s.label .. " " or "") .. self.fmtY(best.v) end
+		end
+		if #lines == 0 then return end
+		self.guide:ClearAllPoints()
+		self.guide:SetPoint("BOTTOMLEFT", floor(x), 0)
+		self.guide:SetHeight(self.plotH)
+		self.guide:Show()
+		self.tipText:SetText(date("%d %b %H:%M", t) .. ": " .. table.concat(lines, " · "))
+		self.tip:ClearAllPoints()
+		self.tip:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", floor(min(x + 8, self.plotW - 150)), floor(min(y + 12, self.plotH)))
+		self.tip:Show()
+	end)
+end
+
+-- series: list of { pts = { {t=, v=}, ... }, color = {r,g,b}, fill = bool, label = string }.
 -- Returns the texture counts: fill strips and line strips (plotW each per drawn series).
 function Chart:Draw(series)
 	release(self)
@@ -105,6 +159,7 @@ function Chart:Draw(series)
 			lo, hi = min(lo or p.v, p.v), max(hi or p.v, p.v)
 		end
 	end
+	if self.tip then self.tip:Hide() self.guide:Hide() end
 	U.Shown(self.none, not lo)
 	for _, fs in ipairs(self.yl) do U.Shown(fs, lo) end
 	for _, fs in ipairs(self.xl) do U.Shown(fs, lo) end
@@ -113,6 +168,8 @@ function Chart:Draw(series)
 		local pad = hi ~= 0 and abs(hi) * 0.05 or 1
 		lo, hi = lo - pad, hi + pad
 	end
+	self.hoverT0, self.hoverT1 = t0, t1
+	self.t0 = series
 	local w, scale = self.plotW, (self.plotH - 1) / (hi - lo)
 	for _, s in ipairs(series) do
 		if #s.pts > 0 then

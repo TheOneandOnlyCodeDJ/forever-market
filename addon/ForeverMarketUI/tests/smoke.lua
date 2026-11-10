@@ -135,6 +135,17 @@ eq(IV.regionRows[1].price:GetText(), "41 units", "estimated sold units")
 eq(IV.regionRows[2].price:GetText(), "7", "auctions that vanished")
 eq(IV.regionRows[3].price:GetText(), U.Money(1184000, true), "estimated copper moved")
 eq(IV.regionRows[4].name:GetText(), "Your sales", "own sales row label")
+-- hover readout: put the cursor in the middle of the plot and run the OnUpdate
+local plot = IV.chart.plot
+stub.cursorX, stub.cursorY = math.floor(IV.chart.plotW / 2), math.floor(IV.chart.plotH / 2)
+plot.scripts.OnUpdate()
+ok(IV.chart.tip:IsShown(), "hover readout shows")
+ok(IV.chart.guide:IsShown(), "hover guide shows")
+ok(IV.chart.tipText:GetText():match("API") ~= nil and IV.chart.tipText:GetText():match("TSM") ~= nil,
+	"hover readout names both series")
+stub.cursorX, stub.cursorY = -50, -50
+plot.scripts.OnUpdate()
+ok(not IV.chart.tip:IsShown(), "hover readout hides outside the plot")
 ok(IV.similarRows[1]:IsShown() and not IV.similarRows[2]:IsShown(), "copes with one similar item")
 IV.add:Click()
 eq(IV.add.text:GetText(), "- Remove from chart", "add to chart toggles")

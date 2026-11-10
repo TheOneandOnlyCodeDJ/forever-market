@@ -84,7 +84,11 @@ def build(conn, now=None):
     extras = [i for i in dropped if i not in set(tier1)]
 
     tier1_series = _series(conn, tier1 + extras, house, region, daily=False)
-    tier2_series = _series(conn, tier2, house, region, daily=True)
+    # daily downsampling destroys the shape of a series shorter than a few days: keep tier 2 hourly
+    # until there is genuinely more history than the addon plots
+    hours = conn.execute("SELECT COUNT(DISTINCT at) FROM price_history WHERE source = 'api'").fetchone()[0]
+    tier2_daily = hours > MAX_POINTS
+    tier2_series = _series(conn, tier2, house, region, daily=tier2_daily)
 
     sold = {r["item_id"]: {"q": r["q"], "n": r["n"], "t": r["t"]} for r in conn.execute(
         """SELECT item_id, SUM(quantity) AS q, COUNT(*) AS n, SUM(buyout) AS t
@@ -108,7 +112,7 @@ def build(conn, now=None):
         items[f"i:{i}"] = entry
         size += blob
     for i in tier2:  # cheapest first out of the file when over the cap
-        entry = make(i, tier2_series, "d", DAILY_POINTS)
+        entry = make(i, tier2_series, "d" if tier2_daily else "h", DAILY_POINTS if tier2_daily else MAX_POINTS)
         blob = len(lua(entry))
         if size + blob > MAX_BYTES:
             skipped += 1

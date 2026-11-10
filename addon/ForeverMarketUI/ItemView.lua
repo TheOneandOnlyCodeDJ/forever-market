@@ -177,9 +177,9 @@ function V.Refresh()
 
 	local typical = U.Points(series, "typical")
 	V.counts = V.chart:Draw({
-		{ pts = typical, color = C.green, fill = true },
-		{ pts = U.Points(series, "cheapest"), color = C.white },
-		{ pts = U.Points(series, "tsmcheap"), color = C.amber },
+		{ pts = typical, color = C.green, fill = true, label = "TSM" },
+		{ pts = U.Points(series, "cheapest"), color = C.white, label = "API" },
+		{ pts = U.Points(series, "tsmcheap"), color = C.amber, label = "TSM low" },
 	})
 	V.bars:Draw(U.Points(series, "qty"))
 	local text, color = U.PctText(#typical > 0 and U.Pct(typical[#typical].v, typical[1].v) or nil)
