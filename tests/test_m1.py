@@ -22,7 +22,7 @@ def test_schema_applied_twice_is_noop(tmp_path):
     conn.close()
     conn = db.connect(path)
     assert [tuple(r) for r in _schema(conn)] == first
-    assert sum(r[0] == "table" for r in first) == len(report.TABLES) == 25
+    assert sum(r[0] == "table" for r in first) == len(report.TABLES) == 26
     assert conn.execute("SELECT note FROM sync_log").fetchall()[0][0] == "kept"
 
 
