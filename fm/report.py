@@ -1,3 +1,4 @@
+import sqlite3
 """Builds reports/digest.md and data/summary.json from the DB alone (no network)."""
 import json
 import os
@@ -300,8 +301,12 @@ def status(conn):
     sources = [dict(r) for r in conn.execute("""SELECT source, fetched_at, rows, note FROM sync_log s
                    WHERE rowid = (SELECT MAX(rowid) FROM sync_log WHERE source = s.source)
                    ORDER BY source""")]
-    counts = [{"table": t, "rows": conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]}
-              for t in TABLES]
+    counts = []
+    for t in TABLES:  # a database from before a table existed must not crash the report
+        try:
+            counts.append({"table": t, "rows": conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]})
+        except sqlite3.OperationalError:
+            counts.append({"table": t, "rows": 0})
     return sources, counts
 
 
