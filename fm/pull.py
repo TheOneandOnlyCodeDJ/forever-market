@@ -7,6 +7,7 @@ actually differ.
 from __future__ import annotations
 
 import os
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -30,10 +31,16 @@ def _get(url, timeout=30):
         return r.read(), r.headers.get("Last-Modified")
 
 
-def pull(write=True):
-    """[(name, status, bytes)] where status is written/current/missing/failed: ..."""
+def pull(write=True, max_age_h=2.0, force=False):
+    """[(name, status, bytes)]. A file the local timer wrote recently already carries a richer
+    history than the cloud copy, so only a stale local file is replaced."""
     out = []
+    now = time.time()
     for url, dest in targets():
+        if (write and not force and dest.exists()
+                and (now - dest.stat().st_mtime) < max_age_h * 3600):
+            out.append((dest.name, "local is fresh", dest.stat().st_size))
+            continue
         try:
             body, stamp = _get(url)
         except urllib.error.HTTPError as e:
@@ -54,8 +61,8 @@ def pull(write=True):
     return out
 
 
-def run(write=True):
-    rows = pull(write)
+def run(write=True, max_age_h=2.0, force=False):
+    rows = pull(write, max_age_h=max_age_h, force=force)
     for name, status, size in rows:
         print(f"pull {name}: {status}" + (f" ({size:,} bytes)" if size else ""))
     return 0 if all(not s.startswith("failed") for _, s, _ in rows) else 1

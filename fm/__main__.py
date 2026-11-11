@@ -49,6 +49,8 @@ def main(argv=None):
     pt.add_argument("--check", action="store_true", help="report only, change nothing")
     pl = sub.add_parser("pull", help="fetch the addon data published by the hourly cloud sync")
     pl.add_argument("--check", action="store_true", help="report what is stale, write nothing")
+    pl.add_argument("--force", action="store_true", help="take the cloud copy even if the local one is fresh")
+    pl.add_argument("--max-age", type=float, default=2.0, help="hours before a local file counts as stale")
     sub.add_parser("report")
     sub.add_parser("status")
     srv = sub.add_parser("serve")
@@ -57,7 +59,7 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     if args.cmd == "pull":
-        return pull.run(write=not args.check)
+        return pull.run(write=not args.check, max_age_h=args.max_age, force=args.force)
     if args.cmd == "serve":
         from fm import web
         web.serve(args.host, args.port)
