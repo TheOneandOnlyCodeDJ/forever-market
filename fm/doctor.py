@@ -9,7 +9,9 @@ from fm import addon_files, blizzard, paths, tsm_patch
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 TSM_API = Path(paths.CLIENT_DIR) / "Interface/AddOns/TradeSkillMaster/App/API.lua"
 BRIDGE = Path(paths.CLIENT_DIR) / "Interface/AddOns/ForeverMarketBridge"
-TIMERS = ("forever-market-sync.timer", "forever-market-regions.timer")
+# Only the US sync is installed by default; the regions timer is optional (EU/KR/TW only).
+TIMERS = ("forever-market-sync.timer",)
+OPTIONAL_TIMERS = ("forever-market-regions.timer",)
 
 
 def _lines():
