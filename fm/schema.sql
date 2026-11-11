@@ -77,3 +77,8 @@ CREATE TABLE IF NOT EXISTS api_fingerprint (
   at TEXT, house_id INTEGER, sha TEXT, auctions INTEGER, commodities INTEGER,
   PRIMARY KEY (at, house_id)
 );
+-- Auction ids are pruned after a day; the sold totals they proved are kept per item per hour.
+CREATE TABLE IF NOT EXISTS sold_hour (
+  at TEXT, item_id INTEGER, sold_qty INTEGER, sold_copper INTEGER, gone_count INTEGER,
+  PRIMARY KEY (at, item_id)
+);

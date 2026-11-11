@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from fm import blizzard, db, doctor, export_addon, export_tsm, history, import_loot, prune, report, sync_items, sync_prices, sync_recipes, trades, tsm_patch
+from fm import blizzard, db, doctor, export_addon, export_tsm, history, import_loot, prune, pull, report, sync_items, sync_prices, sync_recipes, trades, tsm_patch
 
 
 def main(argv=None):
@@ -45,6 +45,8 @@ def main(argv=None):
     doc.add_argument("--offline", action="store_true", default=None, help="skip the token fetch")
     pt = sub.add_parser("patch-tsm")
     pt.add_argument("--check", action="store_true", help="report only, change nothing")
+    pl = sub.add_parser("pull", help="fetch the addon data published by the hourly cloud sync")
+    pl.add_argument("--check", action="store_true", help="report what is stale, write nothing")
     sub.add_parser("report")
     sub.add_parser("status")
     srv = sub.add_parser("serve")
@@ -52,6 +54,8 @@ def main(argv=None):
     srv.add_argument("--host", default="127.0.0.1")
     args = p.parse_args(argv)
 
+    if args.cmd == "pull":
+        return pull.run(write=not args.check)
     if args.cmd == "serve":
         from fm import web
         web.serve(args.host, args.port)
@@ -113,9 +117,11 @@ def main(argv=None):
         return doctor.run(conn, offline=args.offline)
     if args.cmd == "prune":
         stats = prune.run(conn, dry_run=args.dry_run)
+        life = prune.run_life(conn, dry_run=args.dry_run)
         verb = "would delete" if args.dry_run else "deleted"
         print(f"price_history: {stats['total']} rows, keep hourly {stats['hourly']}, "
               f"keep daily {stats['daily']}, {verb} {stats['deleted']}")
+        print(f"auction_life: {verb} {life['auction_rows']} ids, {life['sold_hours']} sold hours kept")
         return 0
     if args.cmd == "status":
         sources, counts = report.status(conn)
