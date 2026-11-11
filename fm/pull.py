@@ -15,13 +15,13 @@ from fm import paths
 
 DEFAULT_BASE = "https://raw.githubusercontent.com/TheOneandOnlyCodeDJ/forever-market/data"
 ADDONS = "Interface/AddOns/ForeverMarketUI/Data.lua"
-BRIDGE = "WTF/Account/250808230#1/SavedVariables/ForeverMarketPrice.lua"
+BRIDGE = "Interface/AddOns/ForeverMarketBridge/Data.lua"
 
 
 def targets():
     base = os.environ.get("FM_PUBLISH_BASE", DEFAULT_BASE).rstrip("/")
     return [(f"{base}/Data.lua", Path(paths.CLIENT_DIR) / ADDONS),
-            (f"{base}/ForeverMarketPrice.lua", Path(paths.CLIENT_DIR) / BRIDGE)]
+            (f"{base}/Bridge.lua", Path(paths.CLIENT_DIR) / BRIDGE)]
 
 
 def _get(url, timeout=30):

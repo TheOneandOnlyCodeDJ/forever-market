@@ -48,22 +48,25 @@ jobs:
       - name: Prune and report
         run: |
           python3 -m fm prune
-          # api_auction is replaced wholesale every hour: never worth carrying between runs
-          python3 - <<'PY'
-          import sqlite3
-          c = sqlite3.connect('data/market.db')
-          c.executescript("DELETE FROM api_auction; DELETE FROM api_commodity;")
-          c.commit(); c.execute("VACUUM"); c.close()
-          PY
           python3 -m fm report
 
       - name: Export for the game
         run: |
           mkdir -p "$FM_CLIENT_DIR"
           python3 -m fm export addon
-          python3 -m fm export tsm
+          python3 -m fm export tsm    # needs api_auction, so this runs before the strip below
           ls -l client/Interface/AddOns/ForeverMarketUI/Data.lua \
-                "client/WTF/Account/250808230#1/SavedVariables/ForeverMarketPrice.lua"
+                client/Interface/AddOns/ForeverMarketBridge/Data.lua
+
+      - name: Drop the throwaway tables
+        run: |
+          # api_auction and api_commodity are replaced wholesale every hour: never worth caching
+          python3 - <<'PY'
+          import sqlite3
+          c = sqlite3.connect('data/market.db')
+          c.executescript("DELETE FROM api_auction; DELETE FROM api_commodity;")
+          c.commit(); c.execute("VACUUM"); c.close()
+          PY
 
       - name: Publish to the data branch
         run: |
@@ -71,7 +74,7 @@ jobs:
           out="$RUNNER_TEMP/publish"
           mkdir -p "$out"
           cp client/Interface/AddOns/ForeverMarketUI/Data.lua "$out/"
-          cp "client/WTF/Account/250808230#1/SavedVariables/ForeverMarketPrice.lua" "$out/"
+          cp client/Interface/AddOns/ForeverMarketBridge/Data.lua "$out/Bridge.lua"
           cp reports/digest.md "$out/digest.md" || true
           git config user.name "forever-market bot"
           git config user.email "bot@users.noreply.github.com"
