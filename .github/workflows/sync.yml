@@ -1,0 +1,85 @@
+name: market sync
+
+# The hourly job that runs whether or not the PC at home is on. It fetches the auction house from
+# Blizzard and the region prices from TSM, keeps one rolling SQLite file in the Actions cache, and
+# publishes the two files the game needs to the `data` branch.
+on:
+  schedule:
+    - cron: '15 * * * *'   # the API snapshot changes around :12, so poll just after
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fm-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      BLIZZARD_CLIENT_ID: ${{ secrets.BLIZZARD_CLIENT_ID }}
+      BLIZZARD_CLIENT_SECRET: ${{ secrets.BLIZZARD_CLIENT_SECRET }}
+      FM_CLIENT_DIR: ${{ github.workspace }}/client
+      FM_SKIP_PGRP: '1'
+      FM_FORCE_GAME_CLOSED: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Restore the rolling market database
+        uses: actions/cache@v4
+        with:
+          path: data/market.db
+          key: fmdb-${{ github.run_id }}
+          restore-keys: fmdb-
+
+      - name: Sync prices
+        run: |
+          python3 -m fm sync items --if-missing
+          python3 -m fm sync prices
+          python3 -m fm sync api --regions us --house best --skip-unchanged
+
+      - name: Prune and report
+        run: |
+          python3 -m fm prune
+          # api_auction is replaced wholesale every hour: never worth carrying between runs
+          python3 - <<'PY'
+          import sqlite3
+          c = sqlite3.connect('data/market.db')
+          c.executescript("DELETE FROM api_auction; DELETE FROM api_commodity;")
+          c.commit(); c.execute("VACUUM"); c.close()
+          PY
+          python3 -m fm report
+
+      - name: Export for the game
+        run: |
+          mkdir -p "$FM_CLIENT_DIR"
+          python3 -m fm export addon
+          python3 -m fm export tsm
+          ls -l client/Interface/AddOns/ForeverMarketUI/Data.lua \
+                "client/WTF/Account/250808230#1/SavedVariables/ForeverMarketPrice.lua"
+
+      - name: Publish to the data branch
+        run: |
+          set -e
+          out="$RUNNER_TEMP/publish"
+          mkdir -p "$out"
+          cp client/Interface/AddOns/ForeverMarketUI/Data.lua "$out/"
+          cp "client/WTF/Account/250808230#1/SavedVariables/ForeverMarketPrice.lua" "$out/"
+          cp reports/digest.md "$out/digest.md" || true
+          git config user.name "forever-market bot"
+          git config user.email "bot@users.noreply.github.com"
+          git switch --orphan data-tmp
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          rm -rf fm tests docs addon deploy data reports .github client
+          cp "$out"/* .
+          printf '%s\n' "# published data" "" "Written by .github/workflows/sync.yml every hour." > README.md
+          git add -A
+          git commit -qm "data $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -f origin HEAD:data

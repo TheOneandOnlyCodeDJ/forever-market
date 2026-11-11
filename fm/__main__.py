@@ -18,7 +18,9 @@ def main(argv=None):
     sync_api.add_argument("--regions", help="comma-separated, e.g. us,eu,kr,tw; overrides --region")
     sync_api.add_argument("--skip-unchanged", action="store_true",
                           help="do nothing when the payload is identical to the last poll")
-    sync.add_parser("items")
+    items_cmd = sync.add_parser("items")
+    items_cmd.add_argument("--if-missing", action="store_true",
+                           help="skip when the item table already has rows (cloud cache)")
     sync.add_parser("recipes")
     imp = sub.add_parser("import").add_subparsers(dest="what", required=True)
     imp.add_parser("loot").add_argument("--dry-run", action="store_true", help="print what would be imported, write nothing")
@@ -109,6 +111,9 @@ def main(argv=None):
         elif args.what == "recipes":
             sync_recipes.run(conn)
         else:
+            if args.if_missing and conn.execute("SELECT COUNT(*) FROM item").fetchone()[0]:
+                print("items: table already populated, skipped")
+                return 0
             sync_items.run(conn)
         return 0  # failures are printed and logged in sync_log; keep `&&` chains running
     if args.cmd == "patch-tsm":
