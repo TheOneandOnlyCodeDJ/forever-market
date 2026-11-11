@@ -1,0 +1,9 @@
+[Unit]
+Description=Run forever-market pull every hour, after the cloud job
+
+[Timer]
+OnCalendar=*-*-* *:25:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

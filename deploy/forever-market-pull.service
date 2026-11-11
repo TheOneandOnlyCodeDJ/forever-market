@@ -1,0 +1,7 @@
+[Unit]
+Description=forever-market: fetch the hourly cloud sync output into the game folders
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/bazzite/Projects/forever-market
+ExecStart=/usr/bin/python3 -m fm pull

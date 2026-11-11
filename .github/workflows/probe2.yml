@@ -1,0 +1,9 @@
+name: probe2
+on:
+  push:
+    paths: [".github/probe2.txt"]
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
