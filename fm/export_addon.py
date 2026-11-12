@@ -117,7 +117,12 @@ def build(conn, now=None):
     # rather than disappearing from the addon altogether
     items, size, skipped, trimmed = {}, 200_000, 0, 0
     priced_rank = {i: n for n, i in enumerate(priced, 1)}
-    for i in dict.fromkeys(tier1 + extras + tier2):
+    # Trade goods come first. Sorting purely by price pushed ore, herbs and cloth to the tail,
+    # which is how a 1 silver stack of Copper Ore ended up outside the byte cap with no data.
+    metals = [r[0] for r in conn.execute("SELECT DISTINCT item_id FROM api_commodity")]
+    traded = [r[0] for r in conn.execute("SELECT DISTINCT item_id FROM trade")]
+    order = list(dict.fromkeys(extras + traded + metals + tier1 + tier2))
+    for i in order:
         rank = priced_rank.get(i, 0)
         if i in set(extras):  # measured drops always keep their hourly slice
             series, res, window = tier1_series, "h", 48

@@ -26,6 +26,22 @@ def rows(conn):
             d["value"] = value
         d["at"] = at.replace(" ", "T") + "Z"
         out[item_id] = d
+    # Commodities have no auctions, only stack listings with a unit price. Without this the bridge
+    # had nothing for ore, herbs, cloth or fish, so TSM saw no prices for any trade good.
+    for r in conn.execute("""SELECT c.item_id, MIN(c.unit_price), SUM(c.quantity), COUNT(*),
+                                    NULLIF(p.market_value, 0), MAX(c.captured_at)
+                             FROM api_commodity c LEFT JOIN price_realm p ON p.item_id = c.item_id
+                             WHERE c.house_id = ? AND c.unit_price > 0 AND c.quantity > 0
+                             GROUP BY c.item_id""", (house,)):
+        item_id, unit, qty, listings, market, at = r
+        d = {"minbo": unit, "qty": qty, "listings": listings, "kind": "commodity"}
+        if market is not None:
+            d["market"] = market
+        value, source = report.value_of(conn, item_id)
+        if source != "none":
+            d["value"] = value
+        d["at"] = (at or "").replace(" ", "T") + "Z"
+        out.setdefault(item_id, d)
     return out
 
 
