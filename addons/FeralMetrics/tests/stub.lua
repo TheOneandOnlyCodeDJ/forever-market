@@ -67,7 +67,19 @@ function stub.slash(msg) SlashCmdList["FERALMETRICS"](msg) end
 stub.cleu = nil
 function CombatLogGetCurrentEventInfo() return unpack(stub.cleu) end
 
+-- Forever payload: an extra flag field per unit, so spellID lands at 12 and amount at 15
 function stub.log(sub, dstGUID, spellID, spellName, amount, crit)
+  stub.time = stub.time + 0.2
+  local info = { stub.time, sub, false,
+                 "Player-1", "Lain", 0x511, 0,
+                 dstGUID or "Creature-1", "Mob", 0, 0,
+                 spellID, spellName, 1, amount or 0, 0, 1, 0, 0, 0 }
+  if crit then info[21] = true end
+  stub.cleu = info
+  stub.fire("COMBAT_LOG_EVENT_UNFILTERED")
+end
+-- and the older layout, to prove the parser handles both
+function stub.logClassic(sub, dstGUID, spellID, spellName, amount, crit)
   stub.time = stub.time + 0.2
   local info = { stub.time, sub, false, "Player-1", "Lain", 0x511, dstGUID or "Creature-1", "Mob", 0,
                  spellID, spellName, 1, amount or 0 }

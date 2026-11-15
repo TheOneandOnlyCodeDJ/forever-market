@@ -65,6 +65,15 @@ near(bite.perCP[5].avg, 310, 0.01, "bite average of the two hits")
 ok(bite.perCP[5].max == 320, "bite max tracked")
 ok(bite.perCP[5].n == 2, "bite hit count")
 
+-- the same event in the older layout still parses
+stub.logClassic("SPELL_DAMAGE", "Creature-1", 5221, "Shred", 88)
+local shred = FM.summary("Shred")
+ok(shred ~= nil and shred.perCP[0] ~= nil, "classic payload layout also records")
+near(shred.perCP[0].avg, 88, 0.01, "classic layout amount read correctly")
+
+-- crits are counted from the right field
+ok(bite.perCP[5].crits == 1, "one critical recorded")
+
 -- tooltip shows the numbers, and shows nothing for a spell with no samples
 local lines = stub.showTooltip(1822, "Rake")
 local joined = table.concat(lines, " | ")

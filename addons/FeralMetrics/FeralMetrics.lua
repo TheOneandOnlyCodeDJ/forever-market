@@ -236,10 +236,24 @@ local function parse(...)
   else
     info = { ... }
   end
+  -- The payload layout is not the same on every client: Forever sends a second flag field for
+  -- both units, which shifts spellID, name, school and amount two slots later than Classic. So
+  -- find the spell id/name pair instead of trusting a fixed index.
+  local sp
+  for i = 10, 13 do
+    if type(info[i]) == "number" and type(info[i + 1]) == "string" then sp = i; break end
+  end
+  sp = sp or 10
+  local dest
+  for i = 7, 9 do
+    local v = info[i]
+    if type(v) == "string" and v:find("^(Player|Creature|Pet|Vehicle|GameObject)%-") then dest = i; break end
+  end
   return {
-    sub = info[2], srcGUID = info[4], dstGUID = info[7],
-    id = info[10], name = info[11], amount = tonumber(info[13]) or 0,
-    crit = info[19] and true or false,
+    sub = info[2], srcGUID = info[4], dstGUID = info[dest or 7],
+    id = info[sp], name = info[sp + 1], school = info[sp + 2],
+    amount = tonumber(info[sp + 3]) or 0,
+    crit = info[sp + 9] and true or false,     -- id, name, school, amount, overkill, school, resisted, blocked, absorbed, crit
   }
 end
 
@@ -306,12 +320,12 @@ function FM.summaryFor(p, name)
   local out = { name = name, perCP = {}, tickPerCP = {}, full = {}, observed = {} }
   for cp, b in pairs(e.direct) do
     local a = avg(b)
-    if a then out.perCP[cp] = { avg = a, n = b.n, min = b.min, max = b.max } end
+    if a then out.perCP[cp] = { avg = a, n = b.n, min = b.min, max = b.max, crits = b.crits or 0 } end
   end
   for cp, b in pairs(e.tick) do
     local a = avg(b)
     if a then
-      out.tickPerCP[cp] = { avg = a, n = b.n, min = b.min, max = b.max }
+      out.tickPerCP[cp] = { avg = a, n = b.n, min = b.min, max = b.max, crits = b.crits or 0 }
       local app = e.apps and e.apps[cp]
       local ticks = math.max((app and app.maxTicks) or 0, designedTicks(name, cp))
       if ticks > 0 then out.full[cp] = { total = a * ticks, ticks = ticks } end
