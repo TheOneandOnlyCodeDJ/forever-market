@@ -11,7 +11,7 @@
 local ADDON, FM = ...
 
 FM.VERSION = "0.1.0"
-FM.MIN_HITS = 3            -- quiet on the tooltip until there are this many samples
+FM.MIN_HITS = 1            -- show a figure as soon as there is one sample
 FM.CP_WINDOW = 2.0         -- combo points seen this recently before a finisher are attributed to it
 
 local FINISHER = { [1079] = true, [22568] = true, [22570] = true }
@@ -365,17 +365,76 @@ local function tipLines(id)
   return lines
 end
 
-local function hookTooltips()
-  if not GameTooltip then return end
-  GameTooltip:HookScript("OnTooltipSetSpell", function(tip)
-    if not db().settings.tips then return end
-    local _, id = tip:GetSpell()
-    if not id then return end
-    local lines = tipLines(id)
-    if not lines then return end
+local KNOWN = { [1822]=1,[1823]=1,[1824]=1,[1825]=1,[1079]=1,[1082]=1,[5221]=1,[22568]=1,
+                [9005]=1,[33876]=1,[33982]=1,[33983]=1,[779]=1,[6807]=1,[6785]=1,[6787]=1 }
+
+local hooksInstalled = {}
+
+local function spellIdOf(tip)
+  if tip._fmSpell then return tip._fmSpell end
+  if tip.GetSpell then
+    local ok, _, id = pcall(tip.GetSpell, tip)
+    if ok and type(id) == "number" then return id end
+  end
+  return nil
+end
+
+local function decorate(tip)
+  if not db().settings.tips then return end
+  if tip._fmDone then return end          -- the wrapper and the hook must not stack up
+  local id = spellIdOf(tip)
+  if not id then return end
+  local lines = tipLines(id)
+  if lines then
     append(tip, " ")
     for _, l in ipairs(lines) do append(tip, "FM: " .. l) end
-  end)
+  elseif KNOWN[id] then
+    append(tip, "FM: no samples yet, hit something with it")
+  end
+  tip._fmDone = true
+end
+
+local function installHook(frame)
+  if not frame or hooksInstalled[frame] then return end
+  hooksInstalled[frame] = true
+  if frame.HookScript then
+    frame:HookScript("OnTooltipSetSpell", function(tip)
+      if tip then decorate(tip) end
+    end)
+  end
+end
+
+local function hookTooltips()
+  installHook(GameTooltip)
+  if ItemRefTooltip then installHook(ItemRefTooltip) end
+  -- Some tooltip addons rebuild the lines after the game sets the spell, so also wrap the calls
+  -- that name the spell. Recording the id on the tooltip is what makes the later hook reliable.
+  local gt = GameTooltip
+  if gt then
+    for _, method in ipairs({ "SetSpellByID", "SetSpell", "SetAction" }) do
+      local original = gt[method]
+      if type(original) == "function" and not gt["_fmWrapped" .. method] then
+        gt["_fmWrapped" .. method] = true
+        gt[method] = function(tip, ...)
+          tip._fmDone = nil
+          local ok, a, b = pcall(original, tip, ...)
+          if method == "SetAction" then
+            local slot = ...
+            if GetActionInfo then
+              local kind, id = GetActionInfo(slot)
+              if kind == "spell" then tip._fmSpell = id end
+            end
+          elseif type(b) == "number" then
+            tip._fmSpell = b
+          elseif type(a) == "number" then
+            tip._fmSpell = a
+          end
+          decorate(tip)
+          if ok then return a, b end
+        end
+      end
+    end
+  end
 end
 
 ------------------------------------------------------------------------------- commands
@@ -466,8 +525,16 @@ SlashCmdList["FERALMETRICS"] = function(msg)
     print("FeralMetrics: profile cleared"); return
   end
   if msg == "debug" then
-    print(string.format("FeralMetrics %s events %d hits %d ticks %d profile %s", FM.VERSION,
-      stats.events, stats.hits, stats.ticks, FM.profile().id)); return
+    local installed = 0
+    for _ in pairs(hooksInstalled) do installed = installed + 1 end
+    print(string.format("FeralMetrics %s: events %d, hits %d, ticks %d, tooltip hooks %d, profile %s",
+      FM.VERSION, stats.events, stats.hits, stats.ticks, installed, FM.profile().id))
+    print("  spells recorded: " .. (function()
+      local n = 0
+      for _ in pairs(FM.profile().spells) do n = n + 1 end
+      return n
+    end)())
+    return
   end
   printProfile(FM.profile())
 end
@@ -482,7 +549,11 @@ for _, e in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "P
 end
 
 f:SetScript("OnEvent", function(_, event, ...)
-  if event == "ADDON_LOADED" then db(); FM.ensureProfile(); return end
+  if event == "ADDON_LOADED" then
+    db(); FM.ensureProfile(); hookTooltips()
+    print("|cff33ff99FeralMetrics|r " .. FM.VERSION .. " loaded. /fm for numbers, /fm debug for state.")
+    return
+  end
   if event == "COMBAT_LOG_EVENT_UNFILTERED" then onEvent(...); return end
   if event == "UNIT_COMBO_POINTS" then noteComboPoints(); return end
   FM.ensureProfile()
