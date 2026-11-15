@@ -1,9 +1,0 @@
-## Interface: 16001
-## Title: FeralMetrics
-## Notes: Measured damage for your feral: real numbers from your own combat, stamped with the stats and talents they came from
-## Author: Code
-## Version: 0.1.0
-## SavedVariables: FeralMetricsDB
-## IconTexture: Interface\Icons\Ability_Druid_CatForm
-
-FeralMetrics.lua
