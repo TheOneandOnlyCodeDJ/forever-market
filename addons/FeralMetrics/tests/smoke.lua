@@ -28,7 +28,7 @@ stub.time = stub.time + 2; stub.log("SPELL_PERIODIC_DAMAGE", "Creature-1", 1822,
 stub.time = stub.time + 2; stub.log("SPELL_PERIODIC_DAMAGE", "Creature-1", 1822, "Rake", 39)
 stub.log("SPELL_AURA_REMOVED", "Creature-1", 1822, "Rake", 0)
 
-local rake = FM.summary(1822)
+local rake = FM.summary("Rake")
 ok(rake ~= nil, "rake has samples")
 near(rake.tickPerCP[0].avg, 40, 0.01, "rake tick average")
 ok(rake.tickPerCP[0].n == 3, "rake counted three ticks")
@@ -46,7 +46,7 @@ for _, dmg in ipairs({ 30, 31, 29, 30 }) do
 end
 stub.log("SPELL_AURA_REMOVED", "Creature-1", 1079, "Rip", 0)
 
-local rip = FM.summary(1079)
+local rip = FM.summary("Rip")
 ok(rip ~= nil, "rip has samples")
 ok(rip.tickPerCP[5] ~= nil, "rip recorded against five combo points")
 near(rip.tickPerCP[5].avg, 30, 0.01, "rip tick average")
@@ -59,26 +59,26 @@ stub.cp = 5
 stub.fire("UNIT_COMBO_POINTS")
 stub.log("SPELL_DAMAGE", "Creature-1", 22568, "Ferocious Bite", 300)
 stub.log("SPELL_DAMAGE", "Creature-1", 22568, "Ferocious Bite", 320, true)
-local bite = FM.summary(22568)
+local bite = FM.summary("Ferocious Bite")
 ok(bite.perCP[5] ~= nil, "bite recorded per combo point")
 near(bite.perCP[5].avg, 310, 0.01, "bite average of the two hits")
 ok(bite.perCP[5].max == 320, "bite max tracked")
 ok(bite.perCP[5].n == 2, "bite hit count")
 
 -- tooltip shows the numbers, and shows nothing for a spell with no samples
-local lines = stub.showTooltip(1822)
+local lines = stub.showTooltip(1822, "Rake")
 local joined = table.concat(lines, " | ")
 ok(joined:find("per tick") ~= nil, "tooltip has a tick line")
 ok(joined:find("FM:") ~= nil, "tooltip lines are tagged")
-ok(stub.showTooltip(999999) and #stub.showTooltip(999999) == 0, "unknown spell adds nothing")
+ok(#stub.showTooltip(999999, "Not A Spell") == 0, "unknown spell adds nothing")
 
 -- changing a stat starts a new profile and keeps the old numbers apart
 stub.ap = 400
 stub.fire("UNIT_ATTACK_POWER")
 local second = FM.profile().id
 ok(second ~= firstProfile, "a new profile starts when attack power changes")
-ok(FM.summary(1822) == nil, "the new profile starts empty")
-ok(FM.summaryFor(FeralMetricsDB.profiles[firstProfile], 1822) ~= nil, "the old profile kept its numbers")
+ok(FM.summary("Rake") == nil, "the new profile starts empty")
+ok(FM.summaryFor(FeralMetricsDB.profiles[firstProfile], "Rake") ~= nil, "the old profile kept its numbers")
 
 -- and the old ones survive a reload of the saved variables
 local saved = FeralMetricsDB

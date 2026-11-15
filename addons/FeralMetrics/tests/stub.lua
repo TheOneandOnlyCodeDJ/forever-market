@@ -45,7 +45,9 @@ function GetTalentTabInfo(tab)
 end
 function GetComboPoints(a, b) return stub.cp end
 function UnitAffectingCombat(u) return stub.inCombat ~= false end
-function GetSpellInfo(id) return "Spell" .. id end
+local SPELL_NAMES = { [1822]="Rake",[1823]="Rake",[1824]="Rake",[1825]="Rake",[1079]="Rip",
+                      [22568]="Ferocious Bite",[5221]="Shred",[1082]="Claw" }
+function GetSpellInfo(id) return SPELL_NAMES[id] or ("Spell" .. tostring(id)) end
 
 bit = bit or {}
 function bit.bxor(a, b)
@@ -77,15 +79,24 @@ end
 -- tooltip
 local Tooltip = {}
 Tooltip.__index = Tooltip
-function Tooltip:GetSpell() return "spell", self.spellID end
+function Tooltip:GetSpell() return self.spellName, self.spellID end
+function Tooltip:SetSpellByID(id)
+  self.spellID = id
+  self.spellName = GetSpellInfo(id)
+  self.lines = {}
+end
 function Tooltip:AddLine(text) self.lines[#self.lines + 1] = text end
 function Tooltip:numLines() return #self.lines end
 GameTooltip = setmetatable({ spellID = nil, lines = {}, scripts = {} }, Tooltip)
 function GameTooltip:HookScript(n, f) self.scripts[n] = f end
-function stub.showTooltip(id)
-  GameTooltip.spellID = id
-  GameTooltip.lines = {}
-  if GameTooltip.scripts.OnTooltipSetSpell then GameTooltip.scripts.OnTooltipSetSpell(GameTooltip) end
+function stub.showTooltip(id, name)
+  GameTooltip._fmDone = nil
+  GameTooltip._fmName = nil
+  GameTooltip:SetSpellByID(id)
+  if name then GameTooltip.spellName = name end
+  if GameTooltip.scripts.OnTooltipSetSpell then
+    GameTooltip.scripts.OnTooltipSetSpell(GameTooltip)
+  end
   return GameTooltip.lines
 end
 
