@@ -11,7 +11,7 @@
 
 local ADDON, FM = ...
 
-FM.VERSION = "0.2.0"
+FM.VERSION = "0.3.0"
 FM.MIN_HITS = 1
 FM.CP_WINDOW = 2.0
 
@@ -227,7 +227,32 @@ end
 
 ------------------------------------------------------------------------------- combat log
 
-local stats = { events = 0, hits = 0, ticks = 0, misses = 0, foreign = 0 }
+local stats = { events = 0, hits = 0, ticks = 0, misses = 0, foreign = 0,
+                tips = 0, tipsNamed = 0, warned = false }
+
+local function diag() 
+  local d = db()
+  d.diag = d.diag or { raws = {}, guid = nil }
+  return d.diag
+end
+
+local function snapshotRaw(info)
+  local parts = {}
+  for i = 1, math.min(#info, 25) do
+    local v = info[i]
+    parts[#parts + 1] = type(v) .. ":" .. tostring(v)
+  end
+  return table.concat(parts, " | ")
+end
+
+local function noteRaw(info)
+  local d = diag()
+  d.guid = tostring(safe(UnitGUID, "player"))
+  d.count = stats.events
+  local raws = d.raws
+  table.insert(raws, 1, snapshotRaw(info))
+  while #raws > 5 do table.remove(raws) end
+end
 
 local function parse(...)
   local info
@@ -249,6 +274,7 @@ local function parse(...)
     local v = info[i]
     if type(v) == "string" and v:find("^(Player|Creature|Pet|Vehicle|GameObject)%-") then dest = i; break end
   end
+  noteRaw(info)
   return {
     sub = info[2], srcGUID = info[4], dstGUID = info[dest or 7],
     id = info[sp], name = info[sp + 1], school = info[sp + 2],
@@ -392,7 +418,14 @@ end
 
 local function decorate(tip)
   if not db().settings.tips or tip._fmDone then return end
+  stats.tips = stats.tips + 1
   local name = resolveName(tip)
+  if name then
+    stats.tipsNamed = stats.tipsNamed + 1
+    diag().lastTip = tostring(name)
+  else
+    diag().lastTip = "unresolved"
+  end
   if not name then return end
   local lines = linesFor(name)
   if lines then
@@ -524,11 +557,20 @@ SlashCmdList["FERALMETRICS"] = function(msg)
     local d = db(); d.profiles[FM.profile().id] = nil; current = nil
     print("FeralMetrics: profile cleared"); return
   end
+  if msg == "dump" then
+    local d = diag()
+    d.stats = { events = stats.events, hits = stats.hits, ticks = stats.ticks,
+                misses = stats.misses, foreign = stats.foreign,
+                tips = stats.tips, tipsNamed = stats.tipsNamed,
+                version = FM.VERSION, at = date("%Y-%m-%d %H:%M:%S") }
+    print("FeralMetrics: diagnostics saved, /reload to write them to disk")
+    return
+  end
   if msg == "debug" then
     local n = 0
     for _ in pairs(hooked) do n = n + 1 end
-    print(string.format("FeralMetrics %s: events %d, own %d, ticks %d, foreign %d, tooltip frames %d",
-      FM.VERSION, stats.events, stats.hits, stats.ticks, stats.foreign, n))
+    print(string.format("FeralMetrics %s: events %d, own %d, ticks %d, foreign %d, tooltip frames %d, tooltips seen %d/%d named",
+      FM.VERSION, stats.events, stats.hits, stats.ticks, stats.foreign, n, stats.tips, stats.tipsNamed))
     local names = {}
     for name in pairs(FM.profile().spells) do names[#names + 1] = name end
     table.sort(names)
@@ -572,6 +614,12 @@ ticker:SetScript("OnUpdate", (function()
     acc = acc + elapsed
     if acc < 0.1 then return end
     acc = 0
-    if safe(UnitAffectingCombat, "player") then noteComboPoints() end
+    if safe(UnitAffectingCombat, "player") then
+      noteComboPoints()
+      if not stats.warned and stats.events == 0 and (safe(UnitAffectingCombat, "player")) then
+        stats.warned = true
+        print("|cffffaa00FeralMetrics|r no combat log events yet. Do a fight, then /feral dump and /reload.")
+      end
+    end
   end
 end)())
