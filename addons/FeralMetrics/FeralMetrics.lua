@@ -502,8 +502,10 @@ local function compare()
   end
 end
 
-SLASH_FERALMETRICS1 = "/fm"
-SLASH_FERALMETRICS2 = "/feralmetrics"
+-- /fm belongs to ForeverMarketUI, so this addon answers to /feral
+SLASH_FERALMETRICS1 = "/feral"
+SLASH_FERALMETRICS2 = "/fmetrics"
+SLASH_FERALMETRICS3 = "/feralm"
 SlashCmdList["FERALMETRICS"] = function(msg)
   msg = (msg or ""):lower()
   if msg == "compare" then return compare() end
@@ -551,7 +553,7 @@ end
 f:SetScript("OnEvent", function(_, event, ...)
   if event == "ADDON_LOADED" then
     db(); FM.ensureProfile(); hookTooltips()
-    print("|cff33ff99FeralMetrics|r " .. FM.VERSION .. " loaded. /fm for numbers, /fm debug for state.")
+    print("|cff33ff99FeralMetrics|r " .. FM.VERSION .. " loaded. /feral for numbers, /feral debug for state.")
     return
   end
   if event == "COMBAT_LOG_EVENT_UNFILTERED" then onEvent(...); return end

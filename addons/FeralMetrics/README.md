@@ -1,5 +1,7 @@
 # FeralMetrics
 
+Slash command is `/feral` (`/fmetrics` and `/feralm` also work). `/fm` belongs to ForeverMarketUI.
+
 Measured damage for a feral druid on WoW Forever. It reads your own combat and reports what
 actually happened, never what a tooltip claims should happen.
 
@@ -35,23 +37,23 @@ Every sample is stamped with a fingerprint of everything that changes your damag
 - points in each talent tree
 
 Change any of them and a new profile starts automatically. The old profile stays on disk, so
-`/fm compare` shows old against new per ability and per combo point. Numbers from before a gear
+`/feral compare` shows old against new per ability and per combo point. Numbers from before a gear
 change can never be mixed into the average after it.
 
 ## Commands
 
 | command | does |
 |---|---|
-| `/fm` | current profile and its measured numbers |
-| `/fm compare` | current profile against the one before it |
-| `/fm profiles` | every profile stored, newest last, `*` marks the active one |
-| `/fm tips` | toggle the tooltip lines |
-| `/fm reset` | clear the current profile's samples |
-| `/fm debug` | event counters, for checking the client is feeding it events |
+| `/feral` | current profile and its measured numbers |
+| `/feral compare` | current profile against the one before it |
+| `/feral profiles` | every profile stored, newest last, `*` marks the active one |
+| `/feral tips` | toggle the tooltip lines |
+| `/feral reset` | clear the current profile's samples |
+| `/feral debug` | event counters, for checking the client is feeding it events |
 
 ## If nothing records
 
-`/fm debug` reporting `events 0` after a fight means this client is not delivering combat log
+`/feral debug` reporting `events 0` after a fight means this client is not delivering combat log
 events to addons. Details registers the same event, so it should, but if it does not, tell me and
 we will find the path Details uses on Forever.
 
